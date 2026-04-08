@@ -70,6 +70,13 @@ Services:
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3000`
 
+Observability:
+
+- Prometheus scrapes the gateway metrics endpoint at `http://localhost:8080/q/metrics`
+- Grafana is pre-provisioned with a default `Prometheus` datasource
+- Grafana credentials: `admin` / `admin`
+- A dashboard named `GrayFile Overview` is auto-loaded in the `GrayFile` folder
+
 ## Example request
 
 ```bash

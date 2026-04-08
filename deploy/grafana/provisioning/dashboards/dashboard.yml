@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: GrayFile
+    orgId: 1
+    folder: GrayFile
+    type: file
+    disableDeletion: false
+    editable: true
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
