@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-mvn -pl gateway -am clean test
+./mvnw -pl gateway -am clean test
 
-docker compose -f deploy/docker-compose.yml up -d postgres
+docker compose -f deploy/docker-compose.yml up -d --build
 
 echo "GrayFile bootstrap complete."

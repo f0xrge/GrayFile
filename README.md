@@ -17,7 +17,7 @@ GrayFile is an auditable billing and metering gateway for OpenAI-compatible LLM 
   - token overflow carry-forward to next window
 - Scheduled time-based closure for stale open windows
 - Prometheus metrics via Quarkus `/q/metrics`
-- Docker Compose stack with gateway, PostgreSQL, vLLM, Prometheus, and Grafana
+- Docker Compose stack with gateway, PostgreSQL, mock OpenAI-compatible backend, Prometheus, and Grafana
 
 ## Repository structure
 
@@ -32,14 +32,14 @@ grayfile/
 
 ## Prerequisites
 
-- Java 21+
+- Java 25+
 - Maven 3.9+
 - Docker + Docker Compose
 
 ## Local build
 
 ```bash
-mvn -pl gateway -am clean test
+./mvnw -pl gateway -am clean test
 ```
 
 ## Run locally (without Docker)
@@ -53,20 +53,20 @@ mvn -pl gateway -am clean test
 3. Run Quarkus:
 
 ```bash
-mvn -pl gateway quarkus:dev
+./mvnw -pl gateway quarkus:dev
 ```
 
 ## Run with Docker Compose
 
 ```bash
-docker compose -f deploy/docker-compose.yml up -d
+docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
 Services:
 
 - Gateway: `http://localhost:8080`
 - PostgreSQL: `localhost:5432`
-- vLLM backend: `http://localhost:8000`
+- Mock backend: `http://localhost:8000`
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3000`
 
@@ -81,6 +81,12 @@ curl -X POST http://localhost:8080/llm/v1/chat/completions \
     "model": "facebook/opt-125m",
     "messages": [{"role": "user", "content": "Hello"}]
   }'
+```
+
+## Container smoke test
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/test-containers.ps1
 ```
 
 ## Billing behavior summary
