@@ -1,0 +1,58 @@
+services:
+  gateway:
+    image: maven:3.9.9-eclipse-temurin-21
+    container_name: grayfile-gateway
+    working_dir: /workspace
+    command: mvn -pl gateway quarkus:dev
+    volumes:
+      - ../:/workspace
+    ports:
+      - "8080:8080"
+    environment:
+      GRAYFILE_DB_URL: jdbc:postgresql://postgres:5432/grayfile
+      GRAYFILE_DB_USER: grayfile
+      GRAYFILE_DB_PASSWORD: grayfile
+      GRAYFILE_BACKEND_URL: http://vllm:8000
+    depends_on:
+      - postgres
+      - vllm
+
+  postgres:
+    image: postgres:16
+    container_name: grayfile-postgres
+    environment:
+      POSTGRES_USER: grayfile
+      POSTGRES_PASSWORD: grayfile
+      POSTGRES_DB: grayfile
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: grayfile-vllm
+    command: ["--model", "facebook/opt-125m", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: grayfile-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - gateway
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    container_name: grayfile-grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  pgdata:
