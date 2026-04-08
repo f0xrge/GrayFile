@@ -3,6 +3,7 @@ package io.grayfile.api;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.grayfile.backend.BackendClient;
 import io.grayfile.billing.BillingService;
+import io.grayfile.service.ManagementService;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
@@ -21,10 +22,14 @@ public class LlmProxyResource {
 
     private final BackendClient backendClient;
     private final BillingService billingService;
+    private final ManagementService managementService;
 
-    public LlmProxyResource(@RestClient BackendClient backendClient, BillingService billingService) {
+    public LlmProxyResource(@RestClient BackendClient backendClient,
+                            BillingService billingService,
+                            ManagementService managementService) {
         this.backendClient = backendClient;
         this.billingService = billingService;
+        this.managementService = managementService;
     }
 
     @POST
@@ -36,6 +41,22 @@ public class LlmProxyResource {
         if (customerId == null || customerId.isBlank() || apiKeyId == null || apiKeyId.isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("x-customer-id and x-api-key-id headers are required")
+                    .build();
+        }
+        String modelId = Optional.ofNullable(requestBody)
+                .map(body -> body.path("model").asText(null))
+                .filter(model -> !model.isBlank())
+                .orElse(null);
+        if (modelId == null) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("request body must contain a non-empty model")
+                    .build();
+        }
+
+        ManagementService.UsageScopeValidation validation = managementService.validateUsageScope(customerId, apiKeyId, modelId);
+        if (!validation.valid()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(validation.message())
                     .build();
         }
 
