@@ -1,9 +1,11 @@
 package io.grayfile.api;
 
 import io.grayfile.domain.ApiKeyEntity;
+import io.grayfile.domain.BillingWindowEntity;
 import io.grayfile.domain.CustomerEntity;
 import io.grayfile.domain.LlmModelEntity;
 import io.grayfile.service.ManagementService;
+import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
@@ -12,9 +14,12 @@ import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 @Path("/management/v1")
@@ -136,6 +141,23 @@ public class ManagementResource {
         return ApiKeyResponse.from(managementService.deactivateApiKey(apiKeyId));
     }
 
+    @GET
+    @Path("/billing-windows")
+    public List<BillingWindowResponse> listBillingWindows(@QueryParam("customerId") String customerId,
+                                                          @QueryParam("apiKeyId") String apiKeyId,
+                                                          @QueryParam("startDate") String startDate,
+                                                          @QueryParam("endDate") String endDate) {
+        return managementService.listBillingWindows(
+                        customerId,
+                        apiKeyId,
+                        parseInstant(startDate, "startDate"),
+                        parseInstant(endDate, "endDate")
+                )
+                .stream()
+                .map(BillingWindowResponse::from)
+                .toList();
+    }
+
     public record CustomerUpsertRequest(String id, String name, Boolean active) {
     }
 
@@ -169,6 +191,41 @@ public class ManagementResource {
     public record ApiKeyResponse(String id, String customerId, String name, boolean active) {
         static ApiKeyResponse from(ApiKeyEntity entity) {
             return new ApiKeyResponse(entity.id, entity.customerId, entity.name, entity.active);
+        }
+    }
+
+    public record BillingWindowResponse(String id,
+                                        String customerId,
+                                        String apiKeyId,
+                                        String model,
+                                        Instant windowStart,
+                                        Instant windowEnd,
+                                        int tokenTotal,
+                                        String closureReason,
+                                        boolean active) {
+        static BillingWindowResponse from(BillingWindowEntity entity) {
+            return new BillingWindowResponse(
+                    entity.id.toString(),
+                    entity.customerId,
+                    entity.apiKeyId,
+                    entity.model,
+                    entity.windowStart,
+                    entity.windowEnd,
+                    entity.tokenTotal,
+                    entity.closureReason,
+                    entity.active
+            );
+        }
+    }
+
+    private Instant parseInstant(String value, String label) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(value.trim());
+        } catch (DateTimeParseException exception) {
+            throw new BadRequestException(label + " must be an ISO-8601 instant");
         }
     }
 }

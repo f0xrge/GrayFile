@@ -1,15 +1,18 @@
 package io.grayfile.service;
 
 import io.grayfile.domain.ApiKeyEntity;
+import io.grayfile.domain.BillingWindowEntity;
 import io.grayfile.domain.CustomerEntity;
 import io.grayfile.domain.LlmModelEntity;
 import io.grayfile.persistence.ApiKeyRepository;
+import io.grayfile.persistence.BillingWindowRepository;
 import io.grayfile.persistence.CustomerRepository;
 import io.grayfile.persistence.LlmModelRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.NotFoundException;
 
+import java.time.Instant;
 import java.util.List;
 
 @ApplicationScoped
@@ -18,13 +21,16 @@ public class ManagementService {
     private final CustomerRepository customerRepository;
     private final LlmModelRepository llmModelRepository;
     private final ApiKeyRepository apiKeyRepository;
+    private final BillingWindowRepository billingWindowRepository;
 
     public ManagementService(CustomerRepository customerRepository,
                              LlmModelRepository llmModelRepository,
-                             ApiKeyRepository apiKeyRepository) {
+                             ApiKeyRepository apiKeyRepository,
+                             BillingWindowRepository billingWindowRepository) {
         this.customerRepository = customerRepository;
         this.llmModelRepository = llmModelRepository;
         this.apiKeyRepository = apiKeyRepository;
+        this.billingWindowRepository = billingWindowRepository;
     }
 
     public List<CustomerEntity> listCustomers() {
@@ -145,6 +151,15 @@ public class ManagementService {
         return entity;
     }
 
+    public List<BillingWindowEntity> listBillingWindows(String customerId, String apiKeyId, Instant startFrom, Instant endTo) {
+        customerId = normalizeOptional(customerId);
+        apiKeyId = normalizeOptional(apiKeyId);
+        if (startFrom != null && endTo != null && startFrom.isAfter(endTo)) {
+            throw new IllegalArgumentException("startDate must be before or equal to endDate");
+        }
+        return billingWindowRepository.listFiltered(customerId, apiKeyId, startFrom, endTo);
+    }
+
     public UsageScopeValidation validateUsageScope(String customerId, String apiKeyId, String modelId) {
         CustomerEntity customer = customerRepository.findByIdOptional(customerId).orElse(null);
         if (customer == null || !customer.active) {
@@ -173,6 +188,14 @@ public class ManagementService {
             throw new IllegalArgumentException(label + " is required");
         }
         return value.trim();
+    }
+
+    private String normalizeOptional(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 
     public record UsageScopeValidation(boolean valid, String message) {

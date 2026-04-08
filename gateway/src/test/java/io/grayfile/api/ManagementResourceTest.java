@@ -1,5 +1,9 @@
 package io.grayfile.api;
 
+import io.grayfile.domain.ApiKeyEntity;
+import io.grayfile.domain.BillingWindowEntity;
+import io.grayfile.domain.CustomerEntity;
+import io.grayfile.domain.LlmModelEntity;
 import io.grayfile.persistence.ApiKeyRepository;
 import io.grayfile.persistence.BillingWindowRepository;
 import io.grayfile.persistence.CustomerRepository;
@@ -11,11 +15,14 @@ import jakarta.transaction.UserTransaction;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.Map;
+import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.hasItems;
 
 @QuarkusTest
 class ManagementResourceTest {
@@ -129,5 +136,185 @@ class ManagementResourceTest {
                 .post("/management/v1/customers")
                 .then()
                 .statusCode(400);
+    }
+
+    @Test
+    void shouldListBillingWindowsAndFilterByScopeAndDates() throws Exception {
+        seedManagementScope();
+        persistBillingWindow(
+                UUID.fromString("11111111-1111-1111-1111-111111111111"),
+                "customer-1",
+                "key-1",
+                "gpt-4o-mini",
+                Instant.parse("2026-04-01T00:00:00Z"),
+                Instant.parse("2026-04-01T02:00:00Z"),
+                120,
+                "rolled-over",
+                false
+        );
+        persistBillingWindow(
+                UUID.fromString("22222222-2222-2222-2222-222222222222"),
+                "customer-1",
+                "key-2",
+                "gpt-4o-mini",
+                Instant.parse("2026-04-03T00:00:00Z"),
+                null,
+                80,
+                null,
+                true
+        );
+        persistBillingWindow(
+                UUID.fromString("33333333-3333-3333-3333-333333333333"),
+                "customer-2",
+                "key-3",
+                "gpt-4o-mini",
+                Instant.parse("2026-04-05T00:00:00Z"),
+                Instant.parse("2026-04-05T01:00:00Z"),
+                40,
+                "closed",
+                false
+        );
+
+        given()
+                .when()
+                .get("/management/v1/billing-windows")
+                .then()
+                .statusCode(200)
+                .body("$", hasSize(3))
+                .body("[0].id", equalTo("33333333-3333-3333-3333-333333333333"))
+                .body("[1].id", equalTo("22222222-2222-2222-2222-222222222222"))
+                .body("[2].id", equalTo("11111111-1111-1111-1111-111111111111"));
+
+        given()
+                .queryParam("customerId", "customer-1")
+                .when()
+                .get("/management/v1/billing-windows")
+                .then()
+                .statusCode(200)
+                .body("$", hasSize(2))
+                .body("[0].id", equalTo("22222222-2222-2222-2222-222222222222"))
+                .body("[1].id", equalTo("11111111-1111-1111-1111-111111111111"));
+
+        given()
+                .queryParam("apiKeyId", "key-3")
+                .when()
+                .get("/management/v1/billing-windows")
+                .then()
+                .statusCode(200)
+                .body("$", hasSize(1))
+                .body("[0].id", equalTo("33333333-3333-3333-3333-333333333333"));
+
+        given()
+                .queryParam("customerId", "customer-1")
+                .queryParam("apiKeyId", "key-2")
+                .when()
+                .get("/management/v1/billing-windows")
+                .then()
+                .statusCode(200)
+                .body("$", hasSize(1))
+                .body("[0].id", equalTo("22222222-2222-2222-2222-222222222222"));
+
+        given()
+                .queryParam("startDate", "2026-04-02T00:00:00Z")
+                .queryParam("endDate", "2026-04-04T00:00:00Z")
+                .when()
+                .get("/management/v1/billing-windows")
+                .then()
+                .statusCode(200)
+                .body("$", hasSize(1))
+                .body("[0].id", equalTo("22222222-2222-2222-2222-222222222222"));
+
+        given()
+                .queryParam("startDate", "2026-04-02T12:00:00Z")
+                .queryParam("endDate", "2026-04-06T00:00:00Z")
+                .when()
+                .get("/management/v1/billing-windows")
+                .then()
+                .statusCode(200)
+                .body("$", hasSize(2))
+                .body("id", hasItems(
+                        "22222222-2222-2222-2222-222222222222",
+                        "33333333-3333-3333-3333-333333333333"
+                ));
+    }
+
+    @Test
+    void shouldRejectInvalidBillingWindowDateFilters() {
+        given()
+                .queryParam("startDate", "not-an-instant")
+                .when()
+                .get("/management/v1/billing-windows")
+                .then()
+                .statusCode(400);
+
+        given()
+                .queryParam("startDate", "2026-04-06T00:00:00Z")
+                .queryParam("endDate", "2026-04-05T00:00:00Z")
+                .when()
+                .get("/management/v1/billing-windows")
+                .then()
+                .statusCode(400);
+    }
+
+    private void seedManagementScope() throws Exception {
+        userTransaction.begin();
+
+        CustomerEntity customerOne = new CustomerEntity();
+        customerOne.id = "customer-1";
+        customerOne.name = "Customer One";
+        customerOne.active = true;
+        customerRepository.persist(customerOne);
+
+        CustomerEntity customerTwo = new CustomerEntity();
+        customerTwo.id = "customer-2";
+        customerTwo.name = "Customer Two";
+        customerTwo.active = true;
+        customerRepository.persist(customerTwo);
+
+        LlmModelEntity model = new LlmModelEntity();
+        model.id = "gpt-4o-mini";
+        model.displayName = "GPT-4o Mini";
+        model.provider = "openai";
+        model.active = true;
+        llmModelRepository.persist(model);
+
+        persistApiKey("key-1", "customer-1", "Key One");
+        persistApiKey("key-2", "customer-1", "Key Two");
+        persistApiKey("key-3", "customer-2", "Key Three");
+
+        userTransaction.commit();
+    }
+
+    private void persistApiKey(String id, String customerId, String name) {
+        ApiKeyEntity entity = new ApiKeyEntity();
+        entity.id = id;
+        entity.customerId = customerId;
+        entity.name = name;
+        entity.active = true;
+        apiKeyRepository.persist(entity);
+    }
+
+    private void persistBillingWindow(UUID id,
+                                      String customerId,
+                                      String apiKeyId,
+                                      String model,
+                                      Instant windowStart,
+                                      Instant windowEnd,
+                                      int tokenTotal,
+                                      String closureReason,
+                                      boolean active) throws Exception {
+        userTransaction.begin();
+        BillingWindowEntity entity = new BillingWindowEntity();
+        entity.id = id;
+        entity.customerId = customerId;
+        entity.apiKeyId = apiKeyId;
+        entity.model = model;
+        entity.windowStart = windowStart;
+        entity.windowEnd = windowEnd;
+        entity.tokenTotal = tokenTotal;
+        entity.closureReason = closureReason;
+        entity.active = active;
+        billingWindowRepository.persist(entity);
+        userTransaction.commit();
     }
 }
