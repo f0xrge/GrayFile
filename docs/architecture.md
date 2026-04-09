@@ -11,7 +11,8 @@ It forwards OpenAI-compatible requests, extracts usage data from backend respons
 ```text
 Clients
   -> GrayFile Gateway
-      -> Inference Backend (vLLM, NIM, other OpenAI-compatible API)
+      -> Envoy (egress resilience hop)
+          -> Inference Backend (vLLM, NIM, other OpenAI-compatible API)
       -> PostgreSQL
       -> Prometheus / Grafana
 ```
@@ -80,6 +81,24 @@ Dashboards for operational visibility.
 6. GrayFile persists a usage event
 7. GrayFile updates or closes the billing window
 8. GrayFile returns the response to the client
+
+
+### LLM egress hop (Envoy)
+- Envoy is the single network resilience layer between the gateway and LLM backend.
+- Quarkus keeps business logic only (validation, usage capture, metering persistence) and does not duplicate retries/circuit-breaker logic.
+- Envoy policy (see `deploy/envoy/envoy.yaml`):
+  - Request timeout: **5s** total for the hop.
+  - Retry budget: **2 retries max** (3 total attempts) on explicit conditions only: connection failures, refused stream, gateway errors, `5xx`, and explicit retriable status codes `502/503/504`.
+  - Per-try timeout: **2s** to bound each retry attempt.
+  - Circuit breaker limits: max connections **100**, max pending requests **100**, max requests **200**.
+  - Outlier detection: eject upstream after **5 consecutive 5xx**, check every **10s**, base ejection **30s**, cap ejection at **50%** of hosts.
+
+### SLA and fallback strategy for this hop
+- End-to-end budget for gateway -> Envoy -> backend: **5s** max before returning an error upstream.
+- Retry budget is bounded and deterministic (at most 2 retries), preventing unbounded tail-latency amplification.
+- Fallback strategy in V1:
+  - No secondary backend failover yet.
+  - On timeout / retries exhausted / open circuit, GrayFile returns backend error to caller and records metering only when a valid usage payload exists.
 
 ## Key integration points
 
