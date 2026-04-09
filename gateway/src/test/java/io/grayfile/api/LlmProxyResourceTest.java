@@ -1,26 +1,28 @@
 package io.grayfile.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.grayfile.backend.BackendClient;
+import io.grayfile.backend.BackendGateway;
 import io.grayfile.domain.ApiKeyEntity;
 import io.grayfile.domain.CustomerEntity;
 import io.grayfile.domain.LlmModelEntity;
+import io.grayfile.domain.ModelRouteEntity;
 import io.grayfile.persistence.ApiKeyRepository;
 import io.grayfile.persistence.AuditExportStateRepository;
 import io.grayfile.persistence.AuditLogRepository;
 import io.grayfile.persistence.BillingWindowRepository;
 import io.grayfile.persistence.CustomerRepository;
 import io.grayfile.persistence.LlmModelRepository;
+import io.grayfile.persistence.ModelRouteRepository;
 import io.grayfile.persistence.UsageEventRepository;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.transaction.UserTransaction;
 import jakarta.ws.rs.core.Response;
-import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
@@ -28,6 +30,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -40,6 +43,9 @@ class LlmProxyResourceTest {
 
     @Inject
     LlmModelRepository llmModelRepository;
+
+    @Inject
+    ModelRouteRepository modelRouteRepository;
 
     @Inject
     ApiKeyRepository apiKeyRepository;
@@ -60,20 +66,20 @@ class LlmProxyResourceTest {
     ObjectMapper objectMapper;
 
     @InjectMock
-    @RestClient
-    BackendClient backendClient;
+    BackendGateway backendGateway;
 
     @Inject
     UserTransaction userTransaction;
 
     @BeforeEach
     void cleanAndSeedDatabase() throws Exception {
-        reset(backendClient);
+        reset(backendGateway);
         userTransaction.begin();
         billingWindowRepository.deleteAll();
         usageEventRepository.deleteAll();
         auditLogRepository.deleteAll();
         auditExportStateRepository.deleteAll();
+        modelRouteRepository.deleteAll();
         apiKeyRepository.deleteAll();
         llmModelRepository.deleteAll();
         customerRepository.deleteAll();
@@ -97,12 +103,14 @@ class LlmProxyResourceTest {
         apiKey.name = "Primary";
         apiKey.active = true;
         apiKeyRepository.persist(apiKey);
+
+        persistRoute("gpt-4o-mini", "backend-a", "http://backend-a:18080", 100, true);
         userTransaction.commit();
     }
 
     @Test
     void shouldAcceptKnownScopeAndPersistUsage() throws Exception {
-        when(backendClient.chatCompletions(anyString(), any(), any())).thenReturn(Response.ok(
+        when(backendGateway.chatCompletions(anyString(), anyString(), any(), any())).thenReturn(Response.ok(
                 objectMapper.readTree("""
                         {
                           "id": "resp-1",
@@ -133,11 +141,38 @@ class LlmProxyResourceTest {
                 .statusCode(200)
                 .body("id", equalTo("resp-1"))
                 .body("usage.total_tokens", equalTo(20))
-                .header("x-request-id", equalTo("req-1"));
+                .header("x-request-id", equalTo("req-1"))
+                .header("x-backend-id", equalTo("backend-a"));
 
         assertEquals(1L, usageEventRepository.count());
         assertEquals(1L, billingWindowRepository.count());
         assertEquals(20, billingWindowRepository.listAll().getFirst().tokenTotal);
+    }
+
+    @Test
+    void shouldFallbackToSecondBackendWhenFirstReturnsFiveHundred() throws Exception {
+        userTransaction.begin();
+        persistRoute("gpt-4o-mini", "backend-b", "http://backend-b:18080", 1, true);
+        userTransaction.commit();
+
+        when(backendGateway.chatCompletions(eq("http://backend-a:18080"), eq("req-2"), eq(null), any()))
+                .thenReturn(Response.serverError().entity(Map.of("error", "boom")).build());
+        when(backendGateway.chatCompletions(eq("http://backend-b:18080"), eq("req-2"), eq(null), any()))
+                .thenReturn(Response.ok(objectMapper.readTree("""
+                        {"id":"resp-2","model":"gpt-4o-mini","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
+                        """)).build());
+
+        given()
+                .contentType("application/json")
+                .header("x-customer-id", "customer-1")
+                .header("x-api-key-id", "key-1")
+                .header("x-request-id", "req-2")
+                .body(Map.of("model", "gpt-4o-mini"))
+                .when()
+                .post("/llm/v1/chat/completions")
+                .then()
+                .statusCode(200)
+                .header("x-backend-id", equalTo("backend-b"));
     }
 
     @Test
@@ -155,7 +190,7 @@ class LlmProxyResourceTest {
                 .statusCode(400)
                 .body(equalTo("api key key-foreign does not belong to customer customer-1"));
 
-        verifyNoInteractions(backendClient);
+        verifyNoInteractions(backendGateway);
     }
 
     @Test
@@ -171,7 +206,7 @@ class LlmProxyResourceTest {
                 .statusCode(400)
                 .body(equalTo("request body must contain a non-empty model"));
 
-        verifyNoInteractions(backendClient);
+        verifyNoInteractions(backendGateway);
     }
 
     void persistForeignApiKey() {
@@ -193,5 +228,17 @@ class LlmProxyResourceTest {
         } catch (Exception exception) {
             throw new RuntimeException(exception);
         }
+    }
+
+    void persistRoute(String modelId, String backendId, String baseUrl, int weight, boolean active) {
+        ModelRouteEntity route = new ModelRouteEntity();
+        route.modelId = modelId;
+        route.backendId = backendId;
+        route.baseUrl = baseUrl;
+        route.weight = weight;
+        route.active = active;
+        route.version = 1;
+        route.updatedAt = Instant.now();
+        modelRouteRepository.persist(route);
     }
 }

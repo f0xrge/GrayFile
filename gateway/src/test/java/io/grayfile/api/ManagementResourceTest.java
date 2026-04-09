@@ -266,6 +266,60 @@ class ManagementResourceTest {
                 .statusCode(400);
     }
 
+
+    @Test
+    void shouldManageModelRoutesLifecycle() {
+        given()
+                .contentType("application/json")
+                .body(Map.of("id", "gpt-4o-mini", "displayName", "GPT-4o Mini", "provider", "openai"))
+                .when()
+                .post("/management/v1/models")
+                .then()
+                .statusCode(201);
+
+        given()
+                .contentType("application/json")
+                .body(Map.of("backendId", "backend-a", "baseUrl", "http://backend-a:18080", "weight", 90, "active", true))
+                .when()
+                .post("/management/v1/models/gpt-4o-mini/routes")
+                .then()
+                .statusCode(201)
+                .body("backendId", equalTo("backend-a"))
+                .body("active", equalTo(true))
+                .body("weight", equalTo(90));
+
+        given()
+                .when()
+                .get("/management/v1/models/gpt-4o-mini/routes")
+                .then()
+                .statusCode(200)
+                .body("$", hasSize(1));
+
+        given()
+                .contentType("application/json")
+                .body(Map.of("active", false))
+                .when()
+                .put("/management/v1/models/gpt-4o-mini/routes/backend-a/active")
+                .then()
+                .statusCode(200)
+                .body("active", equalTo(false));
+
+        given()
+                .contentType("application/json")
+                .body(Map.of("weight", 25))
+                .when()
+                .put("/management/v1/models/gpt-4o-mini/routes/backend-a/weight")
+                .then()
+                .statusCode(200)
+                .body("weight", equalTo(25));
+
+        given()
+                .when()
+                .delete("/management/v1/models/gpt-4o-mini/routes/backend-a")
+                .then()
+                .statusCode(204);
+    }
+
     private void seedManagementScope() throws Exception {
         userTransaction.begin();
 

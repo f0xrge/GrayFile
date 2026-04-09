@@ -1,7 +1,7 @@
 package io.grayfile.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.grayfile.backend.BackendClient;
+import io.grayfile.backend.BackendGateway;
 import io.grayfile.billing.BillingService;
 import io.grayfile.metrics.GatewayMetrics;
 import io.grayfile.service.AuditLogService;
@@ -12,7 +12,6 @@ import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
-import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 import java.time.Instant;
 import java.time.Duration;
@@ -26,22 +25,25 @@ public class LlmProxyResource {
 
     private static final Logger LOG = Logger.getLogger(LlmProxyResource.class);
 
-    private final BackendClient backendClient;
+    private final BackendGateway backendGateway;
+    private final io.grayfile.service.ModelRoutingService modelRoutingService;
     private final BillingService billingService;
     private final ManagementService managementService;
     private final GatewayMetrics gatewayMetrics;
     private final AuditLogService auditLogService;
 
-    public LlmProxyResource(@RestClient BackendClient backendClient,
+    public LlmProxyResource(BackendGateway backendGateway,
                             BillingService billingService,
                             ManagementService managementService,
                             GatewayMetrics gatewayMetrics,
-                            AuditLogService auditLogService) {
-        this.backendClient = backendClient;
+                            AuditLogService auditLogService,
+                            io.grayfile.service.ModelRoutingService modelRoutingService) {
+        this.backendGateway = backendGateway;
         this.billingService = billingService;
         this.managementService = managementService;
         this.gatewayMetrics = gatewayMetrics;
         this.auditLogService = auditLogService;
+        this.modelRoutingService = modelRoutingService;
     }
 
     @POST
@@ -91,16 +93,38 @@ public class LlmProxyResource {
                 startedAt
         );
 
-        try (Response backendResponse = backendClient.chatCompletions(requestId, traceparent, requestBody)) {
-            JsonNode payload = backendResponse.readEntity(JsonNode.class);
-            captureUsage(customerId, apiKeyId, requestId, payload);
-            observeAndLog(startedAt, requestId, customerId, apiKeyId, modelId, backendResponse);
-            return Response.status(backendResponse.getStatus())
-                    .entity(payload)
-                    .header("x-grayfile-gateway", "grayfile-gateway")
+        java.util.List<io.grayfile.service.ModelRoutingService.RouteTarget> routes = modelRoutingService.resolveCandidates(modelId);
+        if (routes.isEmpty()) {
+            gatewayMetrics.recordApplicationError("route_not_found", modelId, "503");
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity("no active backend route for model: " + modelId)
                     .header("x-request-id", requestId)
                     .build();
-        } catch (Exception exception) {
+        }
+
+        Exception lastError = null;
+        for (io.grayfile.service.ModelRoutingService.RouteTarget route : routes) {
+            try (Response backendResponse = backendGateway.chatCompletions(route.baseUrl(), requestId, traceparent, requestBody)) {
+                JsonNode payload = backendResponse.readEntity(JsonNode.class);
+                if (backendResponse.getStatus() >= 500) {
+                    observeAndLog(startedAt, requestId, customerId, apiKeyId, modelId, backendResponse);
+                    continue;
+                }
+                captureUsage(customerId, apiKeyId, requestId, payload);
+                observeAndLog(startedAt, requestId, customerId, apiKeyId, modelId, backendResponse);
+                return Response.status(backendResponse.getStatus())
+                        .entity(payload)
+                        .header("x-grayfile-gateway", "grayfile-gateway")
+                        .header("x-request-id", requestId)
+                        .header("x-backend-id", route.backendId())
+                        .build();
+            } catch (Exception exception) {
+                lastError = exception;
+            }
+        }
+
+        {
+            Exception exception = lastError == null ? new RuntimeException("all routes failed") : lastError;
             long latencyNanos = Duration.between(startedAt, Instant.now()).toNanos();
             gatewayMetrics.recordRequestLatency(modelId, customerId, apiKeyId, 500, latencyNanos);
             gatewayMetrics.recordApplicationError("gateway_exception", modelId, "500");

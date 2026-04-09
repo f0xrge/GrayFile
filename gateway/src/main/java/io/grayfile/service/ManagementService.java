@@ -5,12 +5,15 @@ import io.grayfile.domain.AuditLogEntity;
 import io.grayfile.domain.BillingWindowEntity;
 import io.grayfile.domain.CustomerEntity;
 import io.grayfile.domain.LlmModelEntity;
+import io.grayfile.domain.ModelRouteEntity;
 import io.grayfile.persistence.ApiKeyRepository;
 import io.grayfile.persistence.AuditLogRepository;
 import io.grayfile.persistence.BillingWindowRepository;
 import io.grayfile.persistence.CustomerRepository;
 import io.grayfile.persistence.LlmModelRepository;
+import io.grayfile.persistence.ModelRouteRepository;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.NotFoundException;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -31,6 +34,8 @@ public class ManagementService {
     private final AuditLogRepository auditLogRepository;
     private final AuditLogService auditLogService;
     private final AlertService alertService;
+    private final ModelRouteRepository modelRouteRepository;
+    private final Event<ModelRoutesChangedEvent> modelRoutesChangedEvent;
     private final boolean twoPersonRuleEnabled;
     private final int bulkRoutingAlertThreshold;
 
@@ -41,6 +46,8 @@ public class ManagementService {
                              AuditLogRepository auditLogRepository,
                              AuditLogService auditLogService,
                              AlertService alertService,
+                             ModelRouteRepository modelRouteRepository,
+                             Event<ModelRoutesChangedEvent> modelRoutesChangedEvent,
                              @ConfigProperty(name = "grayfile.management.two-person-rule.enabled", defaultValue = "false") boolean twoPersonRuleEnabled,
                              @ConfigProperty(name = "grayfile.management.alert.bulk-routing-threshold", defaultValue = "25") int bulkRoutingAlertThreshold) {
         this.customerRepository = customerRepository;
@@ -50,6 +57,8 @@ public class ManagementService {
         this.auditLogRepository = auditLogRepository;
         this.auditLogService = auditLogService;
         this.alertService = alertService;
+        this.modelRouteRepository = modelRouteRepository;
+        this.modelRoutesChangedEvent = modelRoutesChangedEvent;
         this.twoPersonRuleEnabled = twoPersonRuleEnabled;
         this.bulkRoutingAlertThreshold = bulkRoutingAlertThreshold;
     }
@@ -182,6 +191,86 @@ public class ManagementService {
         }
         maybeAlertBulkRoutingChange(context, entity.id);
         return entity;
+    }
+
+
+    public List<ModelRouteEntity> listModelRoutes(String modelId) {
+        getModel(modelId);
+        return modelRouteRepository.listByModel(modelId);
+    }
+
+    @Transactional
+    public ModelRouteEntity createModelRoute(String modelId,
+                                             String backendId,
+                                             String baseUrl,
+                                             Integer weight,
+                                             Boolean active,
+                                             ChangeAuditContext context) {
+        modelId = normalizeRequired(modelId, "model id");
+        getModel(modelId);
+        backendId = normalizeRequired(backendId, "backend id");
+        if (modelRouteRepository.findByModelAndBackend(modelId, backendId).isPresent()) {
+            throw new IllegalArgumentException("model route already exists for model=" + modelId + " backend=" + backendId);
+        }
+        ModelRouteEntity entity = new ModelRouteEntity();
+        entity.modelId = modelId;
+        entity.backendId = backendId;
+        entity.baseUrl = normalizeRequired(baseUrl, "base url");
+        entity.weight = normalizeWeight(weight);
+        entity.active = active == null || active;
+        entity.version = 1;
+        entity.updatedAt = Instant.now();
+        modelRouteRepository.persist(entity);
+
+        auditManagementChange("MODEL_ROUTE_CREATED", "model_route", modelId + ":" + backendId, context, Map.of(), modelRouteState(entity));
+        modelRoutesChangedEvent.fire(new ModelRoutesChangedEvent(modelId));
+        return entity;
+    }
+
+    @Transactional
+    public ModelRouteEntity setModelRouteActive(String modelId,
+                                                String backendId,
+                                                boolean active,
+                                                ChangeAuditContext context) {
+        ModelRouteEntity entity = modelRouteRepository.findByModelAndBackend(normalizeRequired(modelId, "model id"), normalizeRequired(backendId, "backend id"))
+                .orElseThrow(() -> new NotFoundException("route not found for model=" + modelId + " backend=" + backendId));
+        Map<String, Object> oldState = modelRouteState(entity);
+        entity.active = active;
+        entity.version += 1;
+        entity.updatedAt = Instant.now();
+        Map<String, Object> newState = modelRouteState(entity);
+        auditManagementChange("MODEL_ROUTE_UPDATED", "model_route", entity.modelId + ":" + entity.backendId, context, oldState, newState);
+        modelRoutesChangedEvent.fire(new ModelRoutesChangedEvent(entity.modelId));
+        return entity;
+    }
+
+    @Transactional
+    public ModelRouteEntity setModelRouteWeight(String modelId,
+                                                String backendId,
+                                                int weight,
+                                                ChangeAuditContext context) {
+        ModelRouteEntity entity = modelRouteRepository.findByModelAndBackend(normalizeRequired(modelId, "model id"), normalizeRequired(backendId, "backend id"))
+                .orElseThrow(() -> new NotFoundException("route not found for model=" + modelId + " backend=" + backendId));
+        Map<String, Object> oldState = modelRouteState(entity);
+        entity.weight = normalizeWeight(weight);
+        entity.version += 1;
+        entity.updatedAt = Instant.now();
+        Map<String, Object> newState = modelRouteState(entity);
+        auditManagementChange("MODEL_ROUTE_UPDATED", "model_route", entity.modelId + ":" + entity.backendId, context, oldState, newState);
+        modelRoutesChangedEvent.fire(new ModelRoutesChangedEvent(entity.modelId));
+        return entity;
+    }
+
+    @Transactional
+    public void deleteModelRoute(String modelId, String backendId, ChangeAuditContext context) {
+        String normalizedModelId = normalizeRequired(modelId, "model id");
+        String normalizedBackendId = normalizeRequired(backendId, "backend id");
+        ModelRouteEntity existing = modelRouteRepository.findByModelAndBackend(normalizedModelId, normalizedBackendId)
+                .orElseThrow(() -> new NotFoundException("route not found for model=" + normalizedModelId + " backend=" + normalizedBackendId));
+        Map<String, Object> oldState = modelRouteState(existing);
+        modelRouteRepository.delete(existing);
+        auditManagementChange("MODEL_ROUTE_DELETED", "model_route", normalizedModelId + ":" + normalizedBackendId, context, oldState, Map.of());
+        modelRoutesChangedEvent.fire(new ModelRoutesChangedEvent(normalizedModelId));
     }
 
     public List<ApiKeyEntity> listApiKeys() {
@@ -359,6 +448,18 @@ public class ManagementService {
         );
     }
 
+    private Map<String, Object> modelRouteState(ModelRouteEntity entity) {
+        return auditLogService.payloadOf(
+                "model_id", entity.modelId,
+                "backend_id", entity.backendId,
+                "base_url", entity.baseUrl,
+                "weight", entity.weight,
+                "active", entity.active,
+                "version", entity.version,
+                "updated_at", entity.updatedAt
+        );
+    }
+
     private Map<String, Object> apiKeyState(ApiKeyEntity entity) {
         return auditLogService.payloadOf(
                 "id", entity.id,
@@ -366,6 +467,20 @@ public class ManagementService {
                 "name", entity.name,
                 "active", entity.active
         );
+    }
+
+    private int normalizeWeight(Integer weight) {
+        if (weight == null) {
+            return 100;
+        }
+        return normalizeWeight(weight.intValue());
+    }
+
+    private int normalizeWeight(int weight) {
+        if (weight <= 0) {
+            throw new IllegalArgumentException("route weight must be > 0");
+        }
+        return weight;
     }
 
     private String normalizeRequired(String value, String label) {
