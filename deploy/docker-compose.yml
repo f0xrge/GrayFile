@@ -1,4 +1,15 @@
 services:
+  management-ui:
+    build:
+      context: ..
+      dockerfile: management-ui/Dockerfile
+    container_name: grayfile-management-ui
+    ports:
+      - "4200:80"
+    depends_on:
+      gateway:
+        condition: service_started
+
   gateway:
     build:
       context: ..
@@ -50,6 +61,7 @@ services:
     command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
     ports:
       - "11000:11000"
+      - "11001:11001"
       - "10000:10000"
       - "9901:9901"
     volumes:

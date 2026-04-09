@@ -65,6 +65,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 Services:
 
 - Gateway (direct, local only): `http://localhost:8080`
+- Management UI: `http://localhost:4200`
 - Envoy public listener (`/llm/v1/*`): `http://localhost:11000` (rate limits + overload protection)
 - Envoy restricted listener (`/management/v1/*`, internal/VPN intended): `http://localhost:11001`
 - PostgreSQL: `localhost:5432`
