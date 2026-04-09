@@ -65,7 +65,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 Services:
 
 - Gateway (direct, local only): `http://localhost:8080`
-- Envoy public listener (`/llm/v1/*`): `http://localhost:11000`
+- Envoy public listener (`/llm/v1/*`): `http://localhost:11000` (rate limits + overload protection)
 - Envoy restricted listener (`/management/v1/*`, internal/VPN intended): `http://localhost:11001`
 - PostgreSQL: `localhost:5432`
 - Mock backend: `http://localhost:8000`
@@ -82,15 +82,49 @@ Observability:
 ## Example request
 
 ```bash
-curl -X POST http://localhost:8080/llm/v1/chat/completions \
+curl -X POST http://localhost:11000/llm/v1/chat/completions \
   -H 'content-type: application/json' \
   -H 'x-customer-id: customer-1' \
   -H 'x-api-key-id: key-1' \
+  -H 'x-llm-model: facebook/opt-125m' \
   -d '{
     "model": "facebook/opt-125m",
     "messages": [{"role": "user", "content": "Hello"}]
   }'
 ```
+
+
+## Rate limits and overload protection
+
+Envoy enforces throttling for `POST /llm/v1/chat/completions` using partition keys:
+
+- `x-customer-id`
+- `x-api-key-id`
+- `x-llm-model`
+
+Baseline defaults (local/static policy):
+
+- **Default**: 240 requests/minute per Envoy instance for chat completions.
+- **Tenant override `tenant-enterprise`**: 600 requests/minute.
+- **Tenant override `tenant-free`**: 60 requests/minute.
+
+Overload protection:
+
+- Envoy applies local token-bucket throttling on the public LLM listener.
+- Envoy also caps in-flight load toward Quarkus with gateway cluster circuit breakers (`max_requests: 300`, `max_pending_requests: 250`).
+- This protects Quarkus worker saturation and reduces cascading pressure on PostgreSQL writes.
+
+Throttling response contract:
+
+- HTTP status `429 Too Many Requests`
+- JSON error body with `error.code = rate_limited`
+- Headers: `x-throttle-reason`, `retry-after`, `x-rate-limit-partition-keys`, and standard `X-RateLimit-*` headers emitted by Envoy.
+
+Rationale:
+
+- Keep the edge policy deterministic and transparent for client implementers.
+- Provide per-tenant headroom for premium plans while preserving a safe default.
+- Fail fast at the edge rather than degrading Quarkus + PostgreSQL under burst traffic.
 
 ## Container smoke test
 

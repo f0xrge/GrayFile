@@ -14,6 +14,7 @@ try {
     $headers = @{
         "x-customer-id" = "customer-1"
         "x-api-key-id" = "key-1"
+        "x-llm-model" = "gpt-4o-mini"
     }
     $body = '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}]}'
     $response = Invoke-RestMethod -Method Post -Uri "http://localhost:8080/llm/v1/chat/completions" -Headers $headers -ContentType "application/json" -Body $body
