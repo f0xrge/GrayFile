@@ -101,6 +101,50 @@ Dashboards for operational visibility.
   - On timeout / retries exhausted / open circuit, GrayFile returns backend error to caller and records metering only when a valid usage payload exists.
 
 
+
+## Ingress throttling and overload policy
+
+For `POST /llm/v1/chat/completions`, Envoy enforces an explicit edge throttling contract on the **public listener (`:11000`)**.
+
+### Partition keys
+
+Rate-limit descriptors are keyed by:
+
+- `x-customer-id`
+- `x-api-key-id`
+- `x-llm-model`
+
+This keeps throttling decisions aligned with the same tenancy/model axes used for metering and billing scopes.
+
+### Default limits and tenant overrides (static V1 policy)
+
+- Default chat-completions bucket: **240 requests/minute** per Envoy instance.
+- Override for `tenant-enterprise`: **600 requests/minute**.
+- Override for `tenant-free`: **60 requests/minute**.
+
+> V1 uses static descriptors in Envoy local rate limit configuration. The same descriptor shape can later be migrated to a centralized rate-limit service without changing client headers.
+
+### Overload protection toward Quarkus/PostgreSQL
+
+Two controls are combined:
+
+1. **Local rate limiting** on ingress to absorb bursts before they hit Quarkus.
+2. **Cluster circuit-breaker caps** on `gateway_service` (`max_requests: 300`, `max_pending_requests: 250`, `max_connections: 200`) to bound concurrent pressure on gateway threads and downstream PostgreSQL writes.
+
+### Throttling response and observability contract
+
+When throttled, Envoy returns:
+
+- HTTP **429 Too Many Requests**
+- JSON body: `{"error":{"code":"rate_limited","message":"Request throttled by Envoy policy","type":"throttling"}}`
+- Headers:
+  - `x-throttle-reason: envoy_local_rate_limit`
+  - `retry-after: 60`
+  - `x-rate-limit-partition-keys: x-customer-id,x-api-key-id,x-llm-model`
+  - Standard `X-RateLimit-*` headers
+
+This makes client retry behavior explicit and simplifies dashboarding/alerting on throttling signals.
+
 ## Ingress security and route separation
 
 Envoy now exposes **two distinct ingress listeners** in front of `grayfile-gateway`:
