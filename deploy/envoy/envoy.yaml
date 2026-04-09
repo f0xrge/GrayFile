@@ -1,6 +1,137 @@
 static_resources:
   listeners:
-    - name: llm_gateway_listener
+    # Ingress listener exposed to public clients (LLM APIs only).
+    - name: public_llm_listener
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 11000
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: public_llm_ingress
+                route_config:
+                  name: public_llm_route
+                  virtual_hosts:
+                    - name: public_llm
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/llm/v1/"
+                          route:
+                            cluster: gateway_service
+                            timeout: 15s
+                        - match:
+                            prefix: "/"
+                          direct_response:
+                            status: 404
+                            body:
+                              inline_string: "Not found on public listener"
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+    # Ingress listener restricted to management APIs.
+    # Intended to be reachable only from internal/VPN network segments.
+    - name: restricted_management_listener
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 11001
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: management_ingress
+                route_config:
+                  name: management_route
+                  virtual_hosts:
+                    - name: management
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/management/v1/"
+                          route:
+                            cluster: gateway_service
+                            timeout: 10s
+                        - match:
+                            prefix: "/"
+                          direct_response:
+                            status: 404
+                            body:
+                              inline_string: "Not found on management listener"
+                http_filters:
+                  # AuthN: require a valid JWT issued by the OIDC provider.
+                  - name: envoy.filters.http.jwt_authn
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
+                      providers:
+                        management_oidc:
+                          issuer: "https://auth.grayfile.internal/realms/grayfile"
+                          audiences:
+                            - "grayfile-management-api"
+                          remote_jwks:
+                            http_uri:
+                              uri: "https://auth.grayfile.internal/realms/grayfile/protocol/openid-connect/certs"
+                              cluster: oidc_jwks
+                              timeout: 5s
+                            cache_duration: 300s
+                          forward: true
+                      rules:
+                        - match:
+                            prefix: "/management/v1/"
+                          requires:
+                            provider_name: management_oidc
+
+                  # AuthZ: explicit service identity + source network constraints.
+                  - name: envoy.filters.http.rbac
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBAC
+                      rules:
+                        action: ALLOW
+                        policies:
+                          allow_management_callers:
+                            permissions:
+                              - and_rules:
+                                  rules:
+                                    - url_path:
+                                        path:
+                                          prefix: "/management/v1/"
+                                    - or_rules:
+                                        rules:
+                                          - header:
+                                              name: "x-service-identity"
+                                              string_match:
+                                                exact: "grayfile-admin-ui"
+                                          - header:
+                                              name: "x-service-identity"
+                                              string_match:
+                                                exact: "grayfile-ops-automation"
+                            principals:
+                              - or_ids:
+                                  ids:
+                                    - remote_ip:
+                                        address_prefix: "10.0.0.0"
+                                        prefix_len: 8
+                                    - remote_ip:
+                                        address_prefix: "172.16.0.0"
+                                        prefix_len: 12
+                                    - remote_ip:
+                                        address_prefix: "192.168.0.0"
+                                        prefix_len: 16
+                                    - remote_ip:
+                                        address_prefix: "100.64.0.0"
+                                        prefix_len: 10
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+    # Egress resilience hop used by the gateway when calling the inference backend.
+    - name: llm_backend_egress_listener
       address:
         socket_address:
           address: 0.0.0.0
@@ -33,6 +164,39 @@ static_resources:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 
   clusters:
+    - name: gateway_service
+      connect_timeout: 1s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: gateway_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: gateway
+                      port_value: 8080
+
+    - name: oidc_jwks
+      connect_timeout: 2s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: oidc_jwks
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: auth.grayfile.internal
+                      port_value: 443
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          sni: auth.grayfile.internal
+
     - name: llm_backend
       connect_timeout: 1s
       type: STRICT_DNS

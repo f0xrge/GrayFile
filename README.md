@@ -64,7 +64,9 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 Services:
 
-- Gateway: `http://localhost:8080`
+- Gateway (direct, local only): `http://localhost:8080`
+- Envoy public listener (`/llm/v1/*`): `http://localhost:11000`
+- Envoy restricted listener (`/management/v1/*`, internal/VPN intended): `http://localhost:11001`
 - PostgreSQL: `localhost:5432`
 - Mock backend: `http://localhost:8000`
 - Prometheus: `http://localhost:9090`

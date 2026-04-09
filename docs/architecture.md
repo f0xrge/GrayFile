@@ -100,6 +100,85 @@ Dashboards for operational visibility.
   - No secondary backend failover yet.
   - On timeout / retries exhausted / open circuit, GrayFile returns backend error to caller and records metering only when a valid usage payload exists.
 
+
+## Ingress security and route separation
+
+Envoy now exposes **two distinct ingress listeners** in front of `grayfile-gateway`:
+
+- **Public listener (`:11000`)**: only routes `/llm/v1/*` traffic.
+- **Restricted management listener (`:11001`)**: only routes `/management/v1/*` traffic.
+
+Any path mismatch on each listener returns `404` by policy.
+
+### Management authN/authZ policy (Envoy)
+
+For `/management/v1/*`, Envoy applies layered controls before forwarding to Quarkus:
+
+1. **JWT/OIDC authentication (`envoy.filters.http.jwt_authn`)**
+   - Requires a valid bearer token from the configured OIDC issuer.
+   - Enforces audience `grayfile-management-api`.
+2. **Authorization (`envoy.filters.http.rbac`)**
+   - Requires explicit service identity header allow-list:
+     - `x-service-identity: grayfile-admin-ui`
+     - `x-service-identity: grayfile-ops-automation`
+   - Requires caller source IP in approved internal/VPN CIDR ranges:
+     - `10.0.0.0/8`
+     - `172.16.0.0/12`
+     - `192.168.0.0/16`
+     - `100.64.0.0/10`
+
+> In production, this identity header should be set by trusted infrastructure (or replaced by mTLS principal-based policy) and not be client-controlled.
+
+## Access matrix
+
+| Caller | Entry point | Path | Required identity | Decision |
+|---|---|---|---|---|
+| External API consumer | Public listener `:11000` | `/llm/v1/*` | Gateway app headers (`x-customer-id`, `x-api-key-id`) | **Allow** |
+| External API consumer | Public listener `:11000` | `/management/v1/*` | N/A | **Deny (404)** |
+| Internal admin UI / automation (VPN/internal network) | Restricted listener `:11001` | `/management/v1/*` | Valid OIDC JWT + allowed `x-service-identity` + allowed source CIDR | **Allow** |
+| Internal caller missing JWT | Restricted listener `:11001` | `/management/v1/*` | Missing/invalid bearer token | **Deny (401)** |
+| Internal caller with JWT but unauthorized identity/IP | Restricted listener `:11001` | `/management/v1/*` | JWT valid but identity or IP not allowed by RBAC | **Deny (403)** |
+| Any caller | Restricted listener `:11001` | `/llm/v1/*` | N/A | **Deny (404)** |
+
+## Integration validation scenarios (security)
+
+Minimum scenarios to validate Envoy enforcement end-to-end:
+
+1. **No token on management route => 401**
+   ```bash
+   curl -i http://localhost:11001/management/v1/customers
+   ```
+
+2. **Invalid token on management route => 401**
+   ```bash
+   curl -i http://localhost:11001/management/v1/customers \
+     -H 'Authorization: Bearer invalid.token.value'
+   ```
+
+3. **Valid JWT but unauthorized service identity => 403**
+   ```bash
+   curl -i http://localhost:11001/management/v1/customers \
+     -H 'Authorization: Bearer <valid_management_jwt>' \
+     -H 'x-service-identity: unknown-service'
+   ```
+
+4. **Valid JWT and authorized identity from approved network => 200/2xx**
+   ```bash
+   curl -i http://localhost:11001/management/v1/customers \
+     -H 'Authorization: Bearer <valid_management_jwt>' \
+     -H 'x-service-identity: grayfile-admin-ui'
+   ```
+
+5. **Management path through public listener => 404**
+   ```bash
+   curl -i http://localhost:11000/management/v1/customers
+   ```
+
+6. **LLM path through restricted listener => 404**
+   ```bash
+   curl -i http://localhost:11001/llm/v1/chat/completions
+   ```
+
 ## Key integration points
 
 ### Backend integration
