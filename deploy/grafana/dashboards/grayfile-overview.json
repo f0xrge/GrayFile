@@ -274,11 +274,21 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(http_server_requests_seconds_count{status=~\"5..\"}[15m]))",
+          "expr": "sum(increase(grayfile_edge_errors_total[15m]))",
+          "legendFormat": "edge errors",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(grayfile_application_errors_total[15m]))",
+          "legendFormat": "application errors",
+          "refId": "B"
         }
       ],
-      "title": "HTTP 5xx (15m)",
+      "title": "Edge vs Application Errors (15m)",
       "type": "stat"
     },
     {
@@ -367,12 +377,12 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (uri, method, status) (rate(http_server_requests_seconds_count[5m]))",
-          "legendFormat": "{{method}} {{uri}} {{status}}",
+          "expr": "sum by (model, backend_status) (rate(grayfile_gateway_request_latency_seconds_count{model=~\"$model\",customer_id=~\"$customer_id\",api_key_id=~\"$api_key_id\"}[5m]))",
+          "legendFormat": "{{model}} status={{backend_status}}",
           "refId": "A"
         }
       ],
-      "title": "HTTP Throughput by Route",
+      "title": "Gateway Throughput by Model/Status",
       "type": "timeseries"
     },
     {
@@ -457,12 +467,12 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (uri) (rate(http_server_requests_seconds_sum[5m])) / sum by (uri) (rate(http_server_requests_seconds_count[5m]))",
-          "legendFormat": "{{uri}}",
+          "expr": "sum by (model) (rate(grayfile_gateway_request_latency_seconds_sum{model=~\"$model\",customer_id=~\"$customer_id\",api_key_id=~\"$api_key_id\"}[5m])) / sum by (model) (rate(grayfile_gateway_request_latency_seconds_count{model=~\"$model\",customer_id=~\"$customer_id\",api_key_id=~\"$api_key_id\"}[5m]))",
+          "legendFormat": "{{model}}",
           "refId": "A"
         }
       ],
-      "title": "Gateway Avg Latency by Route",
+      "title": "Gateway Avg Latency by Model",
       "type": "timeseries"
     },
     {
@@ -547,11 +557,30 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "increase(grayfile_usage_events_total[5m])",
+          "expr": "sum(increase(envoy_cluster_upstream_rq_timeout[5m]))",
+          "legendFormat": "timeouts",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(envoy_cluster_upstream_rq_retry[5m]))",
+          "legendFormat": "retries",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(envoy_cluster_upstream_rq_pending_overflow[5m]))",
+          "legendFormat": "circuit open/overflow",
+          "refId": "C"
         }
       ],
-      "title": "Usage Events per 5m",
+      "title": "Envoy Edge Errors (5m increase)",
       "type": "timeseries"
     },
     {
@@ -606,7 +635,7 @@
               }
             ]
           },
-          "unit": "percentunit"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -636,11 +665,12 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "system_cpu_usage",
+          "expr": "sum by (type, model, backend_status) (increase(grayfile_application_errors_total{model=~\"$model\"}[5m]))",
+          "legendFormat": "{{type}} {{model}} status={{backend_status}}",
           "refId": "A"
         }
       ],
-      "title": "System CPU Usage",
+      "title": "Application Errors by Type",
       "type": "timeseries"
     },
     {
@@ -742,7 +772,80 @@
     "prometheus"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "model",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "refresh": 1,
+        "definition": "label_values(grayfile_gateway_request_latency_seconds_count, model)",
+        "query": {
+          "query": "label_values(grayfile_gateway_request_latency_seconds_count, model)",
+          "refId": "Prometheus-model-Variable-Query"
+        },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        }
+      },
+      {
+        "name": "customer_id",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "refresh": 1,
+        "definition": "label_values(grayfile_gateway_request_latency_seconds_count, customer_id)",
+        "query": {
+          "query": "label_values(grayfile_gateway_request_latency_seconds_count, customer_id)",
+          "refId": "Prometheus-customer-Variable-Query"
+        },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        }
+      },
+      {
+        "name": "api_key_id",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "refresh": 1,
+        "definition": "label_values(grayfile_gateway_request_latency_seconds_count, api_key_id)",
+        "query": {
+          "query": "label_values(grayfile_gateway_request_latency_seconds_count, api_key_id)",
+          "refId": "Prometheus-api-key-Variable-Query"
+        },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        }
+      }
+    ]
   },
   "time": {
     "from": "now-30m",
@@ -752,6 +855,6 @@
   "timezone": "",
   "title": "GrayFile Overview",
   "uid": "grayfile-overview",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

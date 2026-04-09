@@ -3,15 +3,18 @@ package io.grayfile.api;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.grayfile.backend.BackendClient;
 import io.grayfile.billing.BillingService;
+import io.grayfile.metrics.GatewayMetrics;
 import io.grayfile.service.ManagementService;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.jboss.logging.Logger;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -20,16 +23,21 @@ import java.util.UUID;
 @Produces(MediaType.APPLICATION_JSON)
 public class LlmProxyResource {
 
+    private static final Logger LOG = Logger.getLogger(LlmProxyResource.class);
+
     private final BackendClient backendClient;
     private final BillingService billingService;
     private final ManagementService managementService;
+    private final GatewayMetrics gatewayMetrics;
 
     public LlmProxyResource(@RestClient BackendClient backendClient,
                             BillingService billingService,
-                            ManagementService managementService) {
+                            ManagementService managementService,
+                            GatewayMetrics gatewayMetrics) {
         this.backendClient = backendClient;
         this.billingService = billingService;
         this.managementService = managementService;
+        this.gatewayMetrics = gatewayMetrics;
     }
 
     @POST
@@ -55,30 +63,107 @@ public class LlmProxyResource {
 
         ManagementService.UsageScopeValidation validation = managementService.validateUsageScope(customerId, apiKeyId, modelId);
         if (!validation.valid()) {
+            gatewayMetrics.recordApplicationError("scope_validation", modelId, String.valueOf(Response.Status.BAD_REQUEST.getStatusCode()));
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity(validation.message())
                     .build();
         }
 
-        try (Response backendResponse = backendClient.chatCompletions(requestBody)) {
+        String requestId = resolveRequestId(headers);
+        String traceparent = resolveTraceparent(headers);
+        Instant startedAt = Instant.now();
+
+        try (Response backendResponse = backendClient.chatCompletions(requestId, traceparent, requestBody)) {
             JsonNode payload = backendResponse.readEntity(JsonNode.class);
-            captureUsage(customerId, apiKeyId, headers, payload);
+            captureUsage(customerId, apiKeyId, requestId, payload);
+            observeAndLog(startedAt, requestId, customerId, apiKeyId, modelId, backendResponse);
             return Response.status(backendResponse.getStatus())
                     .entity(payload)
                     .header("x-grayfile-gateway", "grayfile-gateway")
+                    .header("x-request-id", requestId)
+                    .build();
+        } catch (Exception exception) {
+            long latencyNanos = Duration.between(startedAt, Instant.now()).toNanos();
+            gatewayMetrics.recordRequestLatency(modelId, customerId, apiKeyId, 500, latencyNanos);
+            gatewayMetrics.recordApplicationError("gateway_exception", modelId, "500");
+            LOG.errorf(exception,
+                    "{\"event\":\"gateway_request\",\"request_id\":\"%s\",\"customer_id\":\"%s\",\"api_key_id\":\"%s\",\"model\":\"%s\",\"backend_status\":500,\"latency_ms\":%d}",
+                    requestId,
+                    customerId,
+                    apiKeyId,
+                    modelId,
+                    Duration.ofNanos(latencyNanos).toMillis());
+            return Response.serverError()
+                    .entity("gateway failed to call backend")
+                    .header("x-request-id", requestId)
                     .build();
         }
     }
 
-    private void captureUsage(String customerId, String apiKeyId, HttpHeaders headers, JsonNode payload) {
+    private void observeAndLog(Instant startedAt,
+                               String requestId,
+                               String customerId,
+                               String apiKeyId,
+                               String modelId,
+                               Response backendResponse) {
+        int backendStatus = backendResponse.getStatus();
+        long latencyNanos = Duration.between(startedAt, Instant.now()).toNanos();
+        gatewayMetrics.recordRequestLatency(modelId, customerId, apiKeyId, backendStatus, latencyNanos);
+
+        String responseFlags = Optional.ofNullable(backendResponse.getHeaderString("x-envoy-response-flags")).orElse("");
+        int attemptCount = parseAttemptCount(backendResponse.getHeaderString("x-envoy-attempt-count"));
+
+        if (attemptCount > 1) {
+            gatewayMetrics.recordEdgeError("retry", modelId, String.valueOf(backendStatus));
+        }
+
+        String edgeErrorType = mapEdgeErrorType(backendStatus, responseFlags);
+        if (edgeErrorType != null) {
+            gatewayMetrics.recordEdgeError(edgeErrorType, modelId, String.valueOf(backendStatus));
+        } else if (backendStatus >= 400) {
+            gatewayMetrics.recordApplicationError("backend_status", modelId, String.valueOf(backendStatus));
+        }
+
+        LOG.infof(
+                "{\"event\":\"gateway_request\",\"request_id\":\"%s\",\"customer_id\":\"%s\",\"api_key_id\":\"%s\",\"model\":\"%s\",\"backend_status\":%d,\"latency_ms\":%d}",
+                requestId,
+                customerId,
+                apiKeyId,
+                modelId,
+                backendStatus,
+                Duration.ofNanos(latencyNanos).toMillis()
+        );
+    }
+
+    private String mapEdgeErrorType(int backendStatus, String responseFlags) {
+        if (backendStatus == 504 || responseFlags.contains("UT")) {
+            return "timeout";
+        }
+        if (responseFlags.contains("UO")) {
+            return "circuit_open";
+        }
+        if (backendStatus >= 502 && backendStatus <= 504) {
+            return "upstream_unavailable";
+        }
+        return null;
+    }
+
+    private int parseAttemptCount(String attemptCountHeader) {
+        if (attemptCountHeader == null || attemptCountHeader.isBlank()) {
+            return 1;
+        }
+        try {
+            return Integer.parseInt(attemptCountHeader);
+        } catch (NumberFormatException ignored) {
+            return 1;
+        }
+    }
+
+    private void captureUsage(String customerId, String apiKeyId, String requestId, JsonNode payload) {
         JsonNode usageNode = payload.path("usage");
         if (usageNode.isMissingNode()) {
             return;
         }
-
-        String requestId = Optional.ofNullable(headers.getHeaderString("x-request-id"))
-                .filter(s -> !s.isBlank())
-                .orElseGet(() -> payload.path("id").asText("req_" + UUID.randomUUID()));
 
         billingService.handleUsage(
                 customerId,
@@ -90,5 +175,17 @@ public class LlmProxyResource {
                 usageNode.path("total_tokens").asInt(0),
                 Instant.now()
         );
+    }
+
+    private String resolveRequestId(HttpHeaders headers) {
+        return Optional.ofNullable(headers.getHeaderString("x-request-id"))
+                .filter(value -> !value.isBlank())
+                .orElseGet(() -> "req_" + UUID.randomUUID());
+    }
+
+    private String resolveTraceparent(HttpHeaders headers) {
+        return Optional.ofNullable(headers.getHeaderString("traceparent"))
+                .filter(value -> !value.isBlank())
+                .orElse(null);
     }
 }
