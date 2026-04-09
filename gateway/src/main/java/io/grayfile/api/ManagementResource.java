@@ -1,6 +1,9 @@
 package io.grayfile.api;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.grayfile.domain.ApiKeyEntity;
+import io.grayfile.domain.AuditLogEntity;
 import io.grayfile.domain.BillingWindowEntity;
 import io.grayfile.domain.CustomerEntity;
 import io.grayfile.domain.LlmModelEntity;
@@ -9,6 +12,7 @@ import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
@@ -21,6 +25,9 @@ import jakarta.ws.rs.core.Response;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 @Path("/management/v1")
 @Consumes(MediaType.APPLICATION_JSON)
@@ -28,9 +35,11 @@ import java.util.List;
 public class ManagementResource {
 
     private final ManagementService managementService;
+    private final ObjectMapper objectMapper;
 
-    public ManagementResource(ManagementService managementService) {
+    public ManagementResource(ManagementService managementService, ObjectMapper objectMapper) {
         this.managementService = managementService;
+        this.objectMapper = objectMapper;
     }
 
     @GET
@@ -47,21 +56,54 @@ public class ManagementResource {
 
     @POST
     @Path("/customers")
-    public Response createCustomer(CustomerUpsertRequest request) {
-        CustomerEntity entity = managementService.createCustomer(request.id(), request.name(), request.active());
+    public Response createCustomer(CustomerUpsertRequest request,
+                                   @HeaderParam("x-actor-id") String actorId,
+                                   @HeaderParam("x-source-ip") String sourceIp,
+                                   @HeaderParam("x-request-id") String requestId,
+                                   @HeaderParam("x-change-reason") String reason,
+                                   @HeaderParam("x-second-approver-id") String secondApproverId,
+                                   @HeaderParam("x-bulk-change-size") Integer bulkChangeSize) {
+        CustomerEntity entity = managementService.createCustomer(
+                request.id(),
+                request.name(),
+                request.active(),
+                auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
+        );
         return Response.status(Response.Status.CREATED).entity(CustomerResponse.from(entity)).build();
     }
 
     @PUT
     @Path("/customers/{customerId}")
-    public CustomerResponse updateCustomer(@PathParam("customerId") String customerId, CustomerUpdateRequest request) {
-        return CustomerResponse.from(managementService.updateCustomer(customerId, request.name(), request.active()));
+    public CustomerResponse updateCustomer(@PathParam("customerId") String customerId,
+                                           CustomerUpdateRequest request,
+                                           @HeaderParam("x-actor-id") String actorId,
+                                           @HeaderParam("x-source-ip") String sourceIp,
+                                           @HeaderParam("x-request-id") String requestId,
+                                           @HeaderParam("x-change-reason") String reason,
+                                           @HeaderParam("x-second-approver-id") String secondApproverId,
+                                           @HeaderParam("x-bulk-change-size") Integer bulkChangeSize) {
+        return CustomerResponse.from(managementService.updateCustomer(
+                customerId,
+                request.name(),
+                request.active(),
+                auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
+        ));
     }
 
     @DELETE
     @Path("/customers/{customerId}")
-    public CustomerResponse deactivateCustomer(@PathParam("customerId") String customerId) {
-        return CustomerResponse.from(managementService.deactivateCustomer(customerId));
+    public CustomerResponse deactivateCustomer(@PathParam("customerId") String customerId,
+                                               @HeaderParam("x-actor-id") String actorId,
+                                               @HeaderParam("x-source-ip") String sourceIp,
+                                               @HeaderParam("x-request-id") String requestId,
+                                               @HeaderParam("x-change-reason") String reason,
+                                               @HeaderParam("x-second-approver-id") String secondApproverId,
+                                               @HeaderParam("x-bulk-change-size") Integer bulkChangeSize,
+                                               @QueryParam("changeType") String changeType) {
+        return CustomerResponse.from(managementService.deactivateCustomer(
+                customerId,
+                auditContext(actorId, sourceIp, requestId, reason, changeType, secondApproverId, bulkChangeSize)
+        ));
     }
 
     @GET
@@ -78,31 +120,56 @@ public class ManagementResource {
 
     @POST
     @Path("/models")
-    public Response createModel(ModelUpsertRequest request) {
+    public Response createModel(ModelUpsertRequest request,
+                                @HeaderParam("x-actor-id") String actorId,
+                                @HeaderParam("x-source-ip") String sourceIp,
+                                @HeaderParam("x-request-id") String requestId,
+                                @HeaderParam("x-change-reason") String reason,
+                                @HeaderParam("x-second-approver-id") String secondApproverId,
+                                @HeaderParam("x-bulk-change-size") Integer bulkChangeSize) {
         LlmModelEntity entity = managementService.createModel(
                 request.id(),
                 request.displayName(),
                 request.provider(),
-                request.active()
+                request.active(),
+                auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
         );
         return Response.status(Response.Status.CREATED).entity(ModelResponse.from(entity)).build();
     }
 
     @PUT
     @Path("/models/{modelId}")
-    public ModelResponse updateModel(@PathParam("modelId") String modelId, ModelUpdateRequest request) {
+    public ModelResponse updateModel(@PathParam("modelId") String modelId,
+                                     ModelUpdateRequest request,
+                                     @HeaderParam("x-actor-id") String actorId,
+                                     @HeaderParam("x-source-ip") String sourceIp,
+                                     @HeaderParam("x-request-id") String requestId,
+                                     @HeaderParam("x-change-reason") String reason,
+                                     @HeaderParam("x-second-approver-id") String secondApproverId,
+                                     @HeaderParam("x-bulk-change-size") Integer bulkChangeSize) {
         return ModelResponse.from(managementService.updateModel(
                 modelId,
                 request.displayName(),
                 request.provider(),
-                request.active()
+                request.active(),
+                auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
         ));
     }
 
     @DELETE
     @Path("/models/{modelId}")
-    public ModelResponse deactivateModel(@PathParam("modelId") String modelId) {
-        return ModelResponse.from(managementService.deactivateModel(modelId));
+    public ModelResponse deactivateModel(@PathParam("modelId") String modelId,
+                                         @HeaderParam("x-actor-id") String actorId,
+                                         @HeaderParam("x-source-ip") String sourceIp,
+                                         @HeaderParam("x-request-id") String requestId,
+                                         @HeaderParam("x-change-reason") String reason,
+                                         @HeaderParam("x-second-approver-id") String secondApproverId,
+                                         @HeaderParam("x-bulk-change-size") Integer bulkChangeSize,
+                                         @QueryParam("changeType") String changeType) {
+        return ModelResponse.from(managementService.deactivateModel(
+                modelId,
+                auditContext(actorId, sourceIp, requestId, reason, changeType, secondApproverId, bulkChangeSize)
+        ));
     }
 
     @GET
@@ -119,26 +186,55 @@ public class ManagementResource {
 
     @POST
     @Path("/api-keys")
-    public Response createApiKey(ApiKeyCreateRequest request) {
+    public Response createApiKey(ApiKeyCreateRequest request,
+                                 @HeaderParam("x-actor-id") String actorId,
+                                 @HeaderParam("x-source-ip") String sourceIp,
+                                 @HeaderParam("x-request-id") String requestId,
+                                 @HeaderParam("x-change-reason") String reason,
+                                 @HeaderParam("x-second-approver-id") String secondApproverId,
+                                 @HeaderParam("x-bulk-change-size") Integer bulkChangeSize) {
         ApiKeyEntity entity = managementService.createApiKey(
                 request.id(),
                 request.customerId(),
                 request.name(),
-                request.active()
+                request.active(),
+                auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
         );
         return Response.status(Response.Status.CREATED).entity(ApiKeyResponse.from(entity)).build();
     }
 
     @PUT
     @Path("/api-keys/{apiKeyId}")
-    public ApiKeyResponse updateApiKey(@PathParam("apiKeyId") String apiKeyId, ApiKeyUpdateRequest request) {
-        return ApiKeyResponse.from(managementService.updateApiKey(apiKeyId, request.name(), request.active()));
+    public ApiKeyResponse updateApiKey(@PathParam("apiKeyId") String apiKeyId,
+                                       ApiKeyUpdateRequest request,
+                                       @HeaderParam("x-actor-id") String actorId,
+                                       @HeaderParam("x-source-ip") String sourceIp,
+                                       @HeaderParam("x-request-id") String requestId,
+                                       @HeaderParam("x-change-reason") String reason,
+                                       @HeaderParam("x-second-approver-id") String secondApproverId,
+                                       @HeaderParam("x-bulk-change-size") Integer bulkChangeSize) {
+        return ApiKeyResponse.from(managementService.updateApiKey(
+                apiKeyId,
+                request.name(),
+                request.active(),
+                auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
+        ));
     }
 
     @DELETE
     @Path("/api-keys/{apiKeyId}")
-    public ApiKeyResponse deactivateApiKey(@PathParam("apiKeyId") String apiKeyId) {
-        return ApiKeyResponse.from(managementService.deactivateApiKey(apiKeyId));
+    public ApiKeyResponse deactivateApiKey(@PathParam("apiKeyId") String apiKeyId,
+                                           @HeaderParam("x-actor-id") String actorId,
+                                           @HeaderParam("x-source-ip") String sourceIp,
+                                           @HeaderParam("x-request-id") String requestId,
+                                           @HeaderParam("x-change-reason") String reason,
+                                           @HeaderParam("x-second-approver-id") String secondApproverId,
+                                           @HeaderParam("x-bulk-change-size") Integer bulkChangeSize,
+                                           @QueryParam("changeType") String changeType) {
+        return ApiKeyResponse.from(managementService.deactivateApiKey(
+                apiKeyId,
+                auditContext(actorId, sourceIp, requestId, reason, changeType, secondApproverId, bulkChangeSize)
+        ));
     }
 
     @GET
@@ -158,22 +254,44 @@ public class ManagementResource {
                 .toList();
     }
 
-    public record CustomerUpsertRequest(String id, String name, Boolean active) {
+    @GET
+    @Path("/audit-events")
+    public List<AuditEventResponse> listAuditEvents(@QueryParam("type") String eventType,
+                                                    @QueryParam("startDate") String startDate,
+                                                    @QueryParam("endDate") String endDate,
+                                                    @QueryParam("entityType") String entityType,
+                                                    @QueryParam("entityId") String entityId,
+                                                    @QueryParam("limit") Integer limit) {
+        int resolvedLimit = limit == null ? 100 : limit;
+        return managementService.listAuditEvents(
+                        eventType,
+                        parseInstant(startDate, "startDate"),
+                        parseInstant(endDate, "endDate"),
+                        entityType,
+                        entityId,
+                        resolvedLimit
+                )
+                .stream()
+                .map(this::toAuditEventResponse)
+                .toList();
     }
 
-    public record CustomerUpdateRequest(String name, Boolean active) {
+    public record CustomerUpsertRequest(String id, String name, Boolean active, String changeType) {
     }
 
-    public record ModelUpsertRequest(String id, String displayName, String provider, Boolean active) {
+    public record CustomerUpdateRequest(String name, Boolean active, String changeType) {
     }
 
-    public record ModelUpdateRequest(String displayName, String provider, Boolean active) {
+    public record ModelUpsertRequest(String id, String displayName, String provider, Boolean active, String changeType) {
     }
 
-    public record ApiKeyCreateRequest(String id, String customerId, String name, Boolean active) {
+    public record ModelUpdateRequest(String displayName, String provider, Boolean active, String changeType) {
     }
 
-    public record ApiKeyUpdateRequest(String name, Boolean active) {
+    public record ApiKeyCreateRequest(String id, String customerId, String name, Boolean active, String changeType) {
+    }
+
+    public record ApiKeyUpdateRequest(String name, Boolean active, String changeType) {
     }
 
     public record CustomerResponse(String id, String name, boolean active) {
@@ -216,6 +334,69 @@ public class ManagementResource {
                     entity.active
             );
         }
+    }
+
+    public record AuditEventResponse(Long eventId,
+                                     String eventType,
+                                     String actor,
+                                     String entityType,
+                                     String entityId,
+                                     Map<String, Object> payload,
+                                     Instant occurredAt,
+                                     String prevHash,
+                                     String eventHash,
+                                     String signature) {
+    }
+
+    private AuditEventResponse toAuditEventResponse(AuditLogEntity entity) {
+        Map<String, Object> payload = parsePayload(entity.payloadJson);
+        return new AuditEventResponse(
+                entity.eventId,
+                entity.eventType,
+                entity.actor,
+                entity.entityType,
+                entity.entityId,
+                payload,
+                entity.occurredAt,
+                entity.prevHash,
+                entity.eventHash,
+                entity.signature
+        );
+    }
+
+    private Map<String, Object> parsePayload(String payloadJson) {
+        try {
+            return objectMapper.readValue(payloadJson, new TypeReference<>() {
+            });
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("failed to parse audit payload", exception);
+        }
+    }
+
+    private ManagementService.ChangeAuditContext auditContext(String actorId,
+                                                              String sourceIp,
+                                                              String requestId,
+                                                              String reason,
+                                                              String changeType,
+                                                              String secondApproverId,
+                                                              Integer bulkChangeSize) {
+        return new ManagementService.ChangeAuditContext(
+                Optional.ofNullable(actorId).filter(value -> !value.isBlank()).orElse("management-user"),
+                Optional.ofNullable(sourceIp).filter(value -> !value.isBlank()).orElse("unknown"),
+                Optional.ofNullable(requestId).filter(value -> !value.isBlank()).orElse("mgmt_" + UUID.randomUUID()),
+                Optional.ofNullable(reason).filter(value -> !value.isBlank()).orElse("not_provided"),
+                Optional.ofNullable(changeType).filter(value -> !value.isBlank()).orElse("general"),
+                normalizeOptional(secondApproverId),
+                bulkChangeSize == null ? 1 : Math.max(1, bulkChangeSize)
+        );
+    }
+
+    private String normalizeOptional(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private Instant parseInstant(String value, String label) {
