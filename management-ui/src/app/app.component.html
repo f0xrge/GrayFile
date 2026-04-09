@@ -1,0 +1,54 @@
+<div class="shell">
+  <aside class="shell-nav">
+    <div class="brand">
+      <div class="brand-mark">GF</div>
+      <div>
+        <div class="eyebrow">Econocom inspired</div>
+        <h1>GrayFile</h1>
+      </div>
+    </div>
+
+    <p class="brand-copy">
+      Console de management pour piloter les clients, les acces et la topologie de routage des modeles.
+    </p>
+
+    <nav class="nav-list">
+      @for (item of navItems; track item.route) {
+        <a
+          mat-button
+          class="nav-link"
+          [routerLink]="item.route"
+          routerLinkActive="is-active"
+        >
+          <mat-icon fontSet="material-icons-outlined">{{ item.icon }}</mat-icon>
+          <span>{{ item.label }}</span>
+        </a>
+      }
+    </nav>
+
+    <div class="nav-footer">
+      <div class="status-chip">
+        <span class="dot"></span>
+        Internal management plane
+      </div>
+    </div>
+  </aside>
+
+  <section class="shell-content">
+    <mat-toolbar class="shell-toolbar">
+      <div>
+        <div class="eyebrow">Management / v1</div>
+        <strong>Operational control surface</strong>
+      </div>
+      <span class="toolbar-spacer"></span>
+      <button mat-flat-button class="contact-cta">
+        <mat-icon fontSet="material-icons-outlined">shield</mat-icon>
+        Audit-ready operations
+      </button>
+    </mat-toolbar>
+
+    <main class="page-content">
+      <router-outlet></router-outlet>
+    </main>
+  </section>
+</div>

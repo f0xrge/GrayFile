@@ -3,3 +3,6 @@
 **/target/
 *.iml
 .DS_Store
+management-ui/.angular/
+management-ui/dist/
+management-ui/node_modules/

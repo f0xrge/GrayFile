@@ -1,0 +1,42 @@
+.hero,
+.side-card mat-card-content,
+.content-card mat-card-content {
+  padding: 28px;
+}
+
+.route-card {
+  cursor: default;
+}
+
+.route-main {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.route-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.weight-editor {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--gf-muted);
+}
+
+.weight-editor input {
+  width: 88px;
+  padding: 10px 12px;
+  border: 1px solid var(--gf-border);
+  border-radius: 12px;
+}

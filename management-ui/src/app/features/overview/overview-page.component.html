@@ -1,0 +1,54 @@
+<section class="page-shell">
+  <article class="hero-card hero">
+    <div class="hero-copy">
+      <div class="eyebrow">GrayFile management console</div>
+      <h2 class="page-title">Piloter le plan de management sans friction.</h2>
+      <p class="page-subtitle">
+        Cette interface centralise la creation des fiches clients, l'emission des API keys, le catalogue de modeles
+        et le routage vers les endpoints backend, avec une presentation plus executive et plus operationnelle.
+      </p>
+    </div>
+
+    <div class="hero-panel">
+      <div class="hero-panel-label">Design direction</div>
+      <p>
+        Surface claire, typographie affirmee, accent vert signature et panneaux tres lisibles pour retrouver
+        l'energie visuelle observee sur l'univers public d'Econocom.
+      </p>
+    </div>
+  </article>
+
+  <section class="metrics-grid">
+    @for (metric of metrics(); track metric.label) {
+      <mat-card class="metric-card">
+        <mat-card-content>
+          <div class="metric-icon">
+            <mat-icon fontSet="material-icons-outlined">{{ metric.icon }}</mat-icon>
+          </div>
+          <div class="eyebrow">{{ metric.label }}</div>
+          <strong>{{ metric.value }}</strong>
+        </mat-card-content>
+      </mat-card>
+    }
+  </section>
+
+  <section class="capabilities-grid">
+    <article class="content-card capability">
+      <div class="eyebrow">Clients</div>
+      <h3>Onboarder un tenant rapidement</h3>
+      <p>Creation, edition, activation et lecture du portefeuille client a partir de l'API management existante.</p>
+    </article>
+
+    <article class="content-card capability">
+      <div class="eyebrow">API keys</div>
+      <h3>Rattacher les acces au bon client</h3>
+      <p>Vue dediee pour emettre les cles, controler leur statut et garder la relation avec le tenant visible.</p>
+    </article>
+
+    <article class="content-card capability">
+      <div class="eyebrow">Modeles & routes</div>
+      <h3>Operer le routage finement</h3>
+      <p>Chaque modele expose ses endpoints, poids, activation et base URL depuis une meme surface.</p>
+    </article>
+  </section>
+</section>

@@ -1,0 +1,100 @@
+<section class="page-shell">
+  <article class="hero-card hero">
+    <div class="eyebrow">API keys</div>
+    <h2 class="page-title">Distribuer les acces avec du contexte.</h2>
+    <p class="page-subtitle">
+      Chaque cle est rattachee a un client, editable rapidement et exploitable avec les champs d'audit du plan
+      de management.
+    </p>
+  </article>
+
+  <section class="split-grid">
+    <mat-card class="content-card side-card">
+      <mat-card-content class="stack">
+        <div class="toolbar-actions">
+          <button mat-flat-button (click)="resetForm()">Nouvelle API key</button>
+        </div>
+
+        <div class="entity-list">
+          @for (apiKey of apiKeys(); track apiKey.id) {
+            <button
+              type="button"
+              class="entity-item"
+              [class.is-selected]="selectedId() === apiKey.id"
+              (click)="selectApiKey(apiKey)"
+            >
+              <div class="eyebrow">{{ apiKey.id }}</div>
+              <strong>{{ apiKey.name }}</strong>
+              <span>{{ customerName(apiKey.customerId) }}</span>
+              <span class="status-pill" [class.is-inactive]="!apiKey.active">
+                {{ apiKey.active ? 'Active' : 'Inactive' }}
+              </span>
+            </button>
+          } @empty {
+            <div class="empty-state">Aucune API key disponible.</div>
+          }
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <mat-card class="content-card">
+      <mat-card-content class="stack">
+        <form class="stack" [formGroup]="auditForm">
+          <div class="field-grid">
+            <mat-form-field>
+              <mat-label>Actor ID</mat-label>
+              <input matInput formControlName="actorId">
+            </mat-form-field>
+
+            <mat-form-field>
+              <mat-label>Change reason</mat-label>
+              <input matInput formControlName="changeReason">
+            </mat-form-field>
+
+            <mat-form-field class="full">
+              <mat-label>Second approver ID</mat-label>
+              <input matInput formControlName="secondApproverId">
+            </mat-form-field>
+          </div>
+        </form>
+
+        <form class="stack" [formGroup]="apiKeyForm">
+          <div class="field-grid">
+            <mat-form-field>
+              <mat-label>API key ID</mat-label>
+              <input matInput formControlName="id">
+            </mat-form-field>
+
+            <mat-form-field>
+              <mat-label>Client</mat-label>
+              <mat-select formControlName="customerId">
+                @for (customer of customers(); track customer.id) {
+                  <mat-option [value]="customer.id">{{ customer.name }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+
+            <mat-form-field class="full">
+              <mat-label>Nom fonctionnel</mat-label>
+              <input matInput formControlName="name">
+            </mat-form-field>
+
+            <div class="full">
+              <mat-slide-toggle formControlName="active">API key active</mat-slide-toggle>
+            </div>
+          </div>
+        </form>
+
+        <div class="toolbar-actions">
+          <button mat-flat-button (click)="saveApiKey()">
+            {{ selectedApiKey() ? 'Mettre a jour' : 'Creer la cle' }}
+          </button>
+          <button mat-stroked-button (click)="resetForm()">Reinitialiser</button>
+          @if (selectedApiKey()) {
+            <button mat-stroked-button color="warn" (click)="deactivateApiKey()">Desactiver</button>
+          }
+        </div>
+      </mat-card-content>
+    </mat-card>
+  </section>
+</section>

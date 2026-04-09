@@ -1,0 +1,89 @@
+<section class="page-shell">
+  <article class="hero-card hero">
+    <div class="eyebrow">Clients</div>
+    <h2 class="page-title">Creer et maintenir les fiches clients.</h2>
+    <p class="page-subtitle">
+      Une vue simple pour onboarder un tenant, corriger sa fiche et garder la relation d'activation lisible.
+    </p>
+  </article>
+
+  <section class="split-grid">
+    <mat-card class="content-card side-card">
+      <mat-card-content class="stack">
+        <div class="toolbar-actions">
+          <button mat-flat-button (click)="resetForm()">Nouveau client</button>
+        </div>
+
+        <div class="entity-list">
+          @for (customer of customers(); track customer.id) {
+            <button
+              type="button"
+              class="entity-item"
+              [class.is-selected]="selectedId() === customer.id"
+              (click)="selectCustomer(customer)"
+            >
+              <div class="eyebrow">{{ customer.id }}</div>
+              <strong>{{ customer.name }}</strong>
+              <span class="status-pill" [class.is-inactive]="!customer.active">
+                {{ customer.active ? 'Actif' : 'Inactif' }}
+              </span>
+            </button>
+          } @empty {
+            <div class="empty-state">Aucun client disponible pour le moment.</div>
+          }
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <mat-card class="content-card">
+      <mat-card-content class="stack">
+        <form class="stack" [formGroup]="auditForm">
+          <div class="field-grid">
+            <mat-form-field>
+              <mat-label>Actor ID</mat-label>
+              <input matInput formControlName="actorId">
+            </mat-form-field>
+
+            <mat-form-field>
+              <mat-label>Change reason</mat-label>
+              <input matInput formControlName="changeReason">
+            </mat-form-field>
+
+            <mat-form-field class="full">
+              <mat-label>Second approver ID</mat-label>
+              <input matInput formControlName="secondApproverId">
+            </mat-form-field>
+          </div>
+        </form>
+
+        <form class="stack" [formGroup]="customerForm">
+          <div class="field-grid">
+            <mat-form-field>
+              <mat-label>Client ID</mat-label>
+              <input matInput formControlName="id">
+            </mat-form-field>
+
+            <mat-form-field>
+              <mat-label>Nom client</mat-label>
+              <input matInput formControlName="name">
+            </mat-form-field>
+
+            <div class="full">
+              <mat-slide-toggle formControlName="active">Client actif</mat-slide-toggle>
+            </div>
+          </div>
+        </form>
+
+        <div class="toolbar-actions">
+          <button mat-flat-button (click)="saveCustomer()">
+            {{ selectedCustomer() ? 'Mettre a jour' : 'Creer le client' }}
+          </button>
+          <button mat-stroked-button (click)="resetForm()">Reinitialiser</button>
+          @if (selectedCustomer()) {
+            <button mat-stroked-button color="warn" (click)="deactivateCustomer()">Desactiver</button>
+          }
+        </div>
+      </mat-card-content>
+    </mat-card>
+  </section>
+</section>

@@ -1,0 +1,167 @@
+<section class="page-shell">
+  <article class="hero-card hero">
+    <div class="eyebrow">Modeles & endpoints</div>
+    <h2 class="page-title">Controler le catalogue et le routage des backends.</h2>
+    <p class="page-subtitle">
+      La vue regroupe la fiche modele et les routes associees pour operer plus vite les bascules, poids et activations.
+    </p>
+  </article>
+
+  <section class="split-grid">
+    <mat-card class="content-card side-card">
+      <mat-card-content class="stack">
+        <div class="toolbar-actions">
+          <button mat-flat-button (click)="resetModelForm()">Nouveau modele</button>
+        </div>
+
+        <div class="entity-list">
+          @for (model of models(); track model.id) {
+            <button
+              type="button"
+              class="entity-item"
+              [class.is-selected]="selectedModelId() === model.id"
+              (click)="selectModel(model)"
+            >
+              <div class="eyebrow">{{ model.provider }}</div>
+              <strong>{{ model.displayName }}</strong>
+              <span>{{ model.id }}</span>
+              <span class="status-pill" [class.is-inactive]="!model.active">
+                {{ model.active ? 'Actif' : 'Inactif' }}
+              </span>
+            </button>
+          } @empty {
+            <div class="empty-state">Aucun modele disponible.</div>
+          }
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <div class="stack">
+      <mat-card class="content-card">
+        <mat-card-content class="stack">
+          <form class="stack" [formGroup]="auditForm">
+            <div class="field-grid">
+              <mat-form-field>
+                <mat-label>Actor ID</mat-label>
+                <input matInput formControlName="actorId">
+              </mat-form-field>
+
+              <mat-form-field>
+                <mat-label>Change reason</mat-label>
+                <input matInput formControlName="changeReason">
+              </mat-form-field>
+
+              <mat-form-field class="full">
+                <mat-label>Second approver ID</mat-label>
+                <input matInput formControlName="secondApproverId">
+              </mat-form-field>
+            </div>
+          </form>
+
+          <form class="stack" [formGroup]="modelForm">
+            <div class="field-grid">
+              <mat-form-field>
+                <mat-label>Model ID</mat-label>
+                <input matInput formControlName="id">
+              </mat-form-field>
+
+              <mat-form-field>
+                <mat-label>Provider</mat-label>
+                <input matInput formControlName="provider">
+              </mat-form-field>
+
+              <mat-form-field class="full">
+                <mat-label>Display name</mat-label>
+                <input matInput formControlName="displayName">
+              </mat-form-field>
+
+              <div class="full">
+                <mat-slide-toggle formControlName="active">Modele actif</mat-slide-toggle>
+              </div>
+            </div>
+          </form>
+
+          <div class="toolbar-actions">
+            <button mat-flat-button (click)="saveModel()">
+              {{ selectedModel() ? 'Mettre a jour' : 'Creer le modele' }}
+            </button>
+            <button mat-stroked-button (click)="resetModelForm()">Reinitialiser</button>
+            @if (selectedModel()) {
+              <button mat-stroked-button color="warn" (click)="deactivateModel()">Desactiver</button>
+            }
+          </div>
+        </mat-card-content>
+      </mat-card>
+
+      <mat-card class="content-card">
+        <mat-card-content class="stack">
+          <div>
+            <div class="eyebrow">Endpoints associes</div>
+            <h3>Routes backend</h3>
+          </div>
+
+          @if (selectedModel()) {
+            <form class="stack" [formGroup]="routeForm">
+              <div class="field-grid">
+                <mat-form-field>
+                  <mat-label>Backend ID</mat-label>
+                  <input matInput formControlName="backendId">
+                </mat-form-field>
+
+                <mat-form-field>
+                  <mat-label>Weight</mat-label>
+                  <input matInput type="number" formControlName="weight">
+                </mat-form-field>
+
+                <mat-form-field class="full">
+                  <mat-label>Base URL</mat-label>
+                  <input matInput formControlName="baseUrl">
+                </mat-form-field>
+
+                <div class="full">
+                  <mat-slide-toggle formControlName="active">Endpoint actif</mat-slide-toggle>
+                </div>
+              </div>
+            </form>
+
+            <div class="toolbar-actions">
+              <button mat-flat-button (click)="saveRoute()">Ajouter la route</button>
+              <button mat-stroked-button (click)="resetRouteForm()">Vider le formulaire</button>
+            </div>
+
+            <div class="entity-list">
+              @for (route of routes(); track route.backendId) {
+                <div class="entity-item route-card" [class.is-selected]="selectedRouteId() === route.backendId">
+                  <button type="button" class="route-main" (click)="selectRoute(route)">
+                    <div class="eyebrow">{{ route.backendId }}</div>
+                    <strong>{{ route.baseUrl }}</strong>
+                  </button>
+                  <div class="route-meta">
+                    <span class="status-pill" [class.is-inactive]="!route.active">
+                      {{ route.active ? 'Active' : 'Inactive' }}
+                    </span>
+                    <label class="weight-editor">
+                      <span>Weight</span>
+                      <input #weightInput type="number" [value]="route.weight">
+                    </label>
+                  </div>
+                  <div class="toolbar-actions">
+                    <button mat-stroked-button (click)="toggleRoute(route)">
+                      {{ route.active ? 'Desactiver' : 'Activer' }}
+                    </button>
+                    <button mat-stroked-button (click)="updateRouteWeight(route, weightInput.value)">Mettre le poids</button>
+                    <button mat-stroked-button color="warn" (click)="deleteRoute(route)">Supprimer</button>
+                  </div>
+                </div>
+              } @empty {
+                <div class="empty-state">Ce modele n'a encore aucun endpoint associe.</div>
+              }
+            </div>
+          } @else {
+            <div class="empty-state">Selectionnez ou creez un modele pour gerer ses endpoints.</div>
+          }
+        </mat-card-content>
+      </mat-card>
+    </div>
+  </section>
+</section>
