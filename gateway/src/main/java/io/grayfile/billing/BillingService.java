@@ -15,7 +15,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @ApplicationScoped
-public class BillingService {
+public class BillingService implements BillingUsageHandler {
 
     public static final int TOKEN_LIMIT = 1000;
     public static final Duration TIME_LIMIT = Duration.ofMinutes(10);
@@ -35,6 +35,7 @@ public class BillingService {
         this.auditLogService = auditLogService;
     }
 
+    @Override
     @Transactional
     public void handleUsage(String customerId,
                             String apiKeyId,

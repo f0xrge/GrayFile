@@ -1,49 +1,26 @@
 package io.grayfile.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.grayfile.backend.BackendGateway;
-import io.grayfile.billing.BillingService;
-import io.grayfile.metrics.GatewayMetrics;
-import io.grayfile.service.AuditLogService;
-import io.grayfile.service.ManagementService;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import org.jboss.logging.Logger;
 
-import java.time.Instant;
-import java.time.Duration;
 import java.util.Optional;
-import java.util.UUID;
 
 @Path("/llm/v1")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
 public class LlmProxyResource {
 
-    private static final Logger LOG = Logger.getLogger(LlmProxyResource.class);
+    private final InferenceOrchestrator inferenceOrchestrator;
+    private final RequestContextFactory requestContextFactory;
 
-    private final BackendGateway backendGateway;
-    private final io.grayfile.service.ModelRoutingService modelRoutingService;
-    private final BillingService billingService;
-    private final ManagementService managementService;
-    private final GatewayMetrics gatewayMetrics;
-    private final AuditLogService auditLogService;
-
-    public LlmProxyResource(BackendGateway backendGateway,
-                            BillingService billingService,
-                            ManagementService managementService,
-                            GatewayMetrics gatewayMetrics,
-                            AuditLogService auditLogService,
-                            io.grayfile.service.ModelRoutingService modelRoutingService) {
-        this.backendGateway = backendGateway;
-        this.billingService = billingService;
-        this.managementService = managementService;
-        this.gatewayMetrics = gatewayMetrics;
-        this.auditLogService = auditLogService;
-        this.modelRoutingService = modelRoutingService;
+    public LlmProxyResource(InferenceOrchestrator inferenceOrchestrator,
+                            RequestContextFactory requestContextFactory) {
+        this.inferenceOrchestrator = inferenceOrchestrator;
+        this.requestContextFactory = requestContextFactory;
     }
 
     @POST
@@ -67,167 +44,12 @@ public class LlmProxyResource {
                     .build();
         }
 
-        ManagementService.UsageScopeValidation validation = managementService.validateUsageScope(customerId, apiKeyId, modelId);
-        if (!validation.valid()) {
-            gatewayMetrics.recordApplicationError("scope_validation", modelId, String.valueOf(Response.Status.BAD_REQUEST.getStatusCode()));
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity(validation.message())
-                    .build();
-        }
-
-        String requestId = resolveRequestId(headers);
-        String traceparent = resolveTraceparent(headers);
-        Instant startedAt = Instant.now();
-
-        auditLogService.logEvent(
-                "MODEL_ROUTING_DECISION",
-                "gateway-router",
-                "routing",
-                requestId,
-                auditLogService.payloadOf(
-                        "customer_id", customerId,
-                        "api_key_id", apiKeyId,
-                        "model", modelId,
-                        "decision", "route_to_backend"
-                ),
-                startedAt
-        );
-
-        java.util.List<io.grayfile.service.ModelRoutingService.RouteTarget> routes = modelRoutingService.resolveCandidates(modelId);
-        if (routes.isEmpty()) {
-            gatewayMetrics.recordApplicationError("route_not_found", modelId, "503");
-            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
-                    .entity("no active backend route for model: " + modelId)
-                    .header("x-request-id", requestId)
-                    .build();
-        }
-
-        Exception lastError = null;
-        for (io.grayfile.service.ModelRoutingService.RouteTarget route : routes) {
-            try (Response backendResponse = backendGateway.chatCompletions(route.baseUrl(), requestId, traceparent, requestBody)) {
-                JsonNode payload = backendResponse.readEntity(JsonNode.class);
-                if (backendResponse.getStatus() >= 500) {
-                    observeAndLog(startedAt, requestId, customerId, apiKeyId, modelId, backendResponse);
-                    continue;
-                }
-                captureUsage(customerId, apiKeyId, requestId, payload);
-                observeAndLog(startedAt, requestId, customerId, apiKeyId, modelId, backendResponse);
-                return Response.status(backendResponse.getStatus())
-                        .entity(payload)
-                        .header("x-grayfile-gateway", "grayfile-gateway")
-                        .header("x-request-id", requestId)
-                        .header("x-backend-id", route.backendId())
-                        .build();
-            } catch (Exception exception) {
-                lastError = exception;
-            }
-        }
-
-        {
-            Exception exception = lastError == null ? new RuntimeException("all routes failed") : lastError;
-            long latencyNanos = Duration.between(startedAt, Instant.now()).toNanos();
-            gatewayMetrics.recordRequestLatency(modelId, customerId, apiKeyId, 500, latencyNanos);
-            gatewayMetrics.recordApplicationError("gateway_exception", modelId, "500");
-            LOG.errorf(exception,
-                    "{\"event\":\"gateway_request\",\"request_id\":\"%s\",\"customer_id\":\"%s\",\"api_key_id\":\"%s\",\"model\":\"%s\",\"backend_status\":500,\"latency_ms\":%d}",
-                    requestId,
-                    customerId,
-                    apiKeyId,
-                    modelId,
-                    Duration.ofNanos(latencyNanos).toMillis());
-            return Response.serverError()
-                    .entity("gateway failed to call backend")
-                    .header("x-request-id", requestId)
-                    .build();
-        }
-    }
-
-    private void observeAndLog(Instant startedAt,
-                               String requestId,
-                               String customerId,
-                               String apiKeyId,
-                               String modelId,
-                               Response backendResponse) {
-        int backendStatus = backendResponse.getStatus();
-        long latencyNanos = Duration.between(startedAt, Instant.now()).toNanos();
-        gatewayMetrics.recordRequestLatency(modelId, customerId, apiKeyId, backendStatus, latencyNanos);
-
-        String responseFlags = Optional.ofNullable(backendResponse.getHeaderString("x-envoy-response-flags")).orElse("");
-        int attemptCount = parseAttemptCount(backendResponse.getHeaderString("x-envoy-attempt-count"));
-
-        if (attemptCount > 1) {
-            gatewayMetrics.recordEdgeError("retry", modelId, String.valueOf(backendStatus));
-        }
-
-        String edgeErrorType = mapEdgeErrorType(backendStatus, responseFlags);
-        if (edgeErrorType != null) {
-            gatewayMetrics.recordEdgeError(edgeErrorType, modelId, String.valueOf(backendStatus));
-        } else if (backendStatus >= 400) {
-            gatewayMetrics.recordApplicationError("backend_status", modelId, String.valueOf(backendStatus));
-        }
-
-        LOG.infof(
-                "{\"event\":\"gateway_request\",\"request_id\":\"%s\",\"customer_id\":\"%s\",\"api_key_id\":\"%s\",\"model\":\"%s\",\"backend_status\":%d,\"latency_ms\":%d}",
-                requestId,
+        return inferenceOrchestrator.proxyChatCompletion(
+                requestBody,
                 customerId,
                 apiKeyId,
                 modelId,
-                backendStatus,
-                Duration.ofNanos(latencyNanos).toMillis()
+                requestContextFactory.create(headers)
         );
-    }
-
-    private String mapEdgeErrorType(int backendStatus, String responseFlags) {
-        if (backendStatus == 504 || responseFlags.contains("UT")) {
-            return "timeout";
-        }
-        if (responseFlags.contains("UO")) {
-            return "circuit_open";
-        }
-        if (backendStatus >= 502 && backendStatus <= 504) {
-            return "upstream_unavailable";
-        }
-        return null;
-    }
-
-    private int parseAttemptCount(String attemptCountHeader) {
-        if (attemptCountHeader == null || attemptCountHeader.isBlank()) {
-            return 1;
-        }
-        try {
-            return Integer.parseInt(attemptCountHeader);
-        } catch (NumberFormatException ignored) {
-            return 1;
-        }
-    }
-
-    private void captureUsage(String customerId, String apiKeyId, String requestId, JsonNode payload) {
-        JsonNode usageNode = payload.path("usage");
-        if (usageNode.isMissingNode()) {
-            return;
-        }
-
-        billingService.handleUsage(
-                customerId,
-                apiKeyId,
-                payload.path("model").asText("unknown-model"),
-                requestId,
-                usageNode.path("prompt_tokens").asInt(0),
-                usageNode.path("completion_tokens").asInt(0),
-                usageNode.path("total_tokens").asInt(0),
-                Instant.now()
-        );
-    }
-
-    private String resolveRequestId(HttpHeaders headers) {
-        return Optional.ofNullable(headers.getHeaderString("x-request-id"))
-                .filter(value -> !value.isBlank())
-                .orElseGet(() -> "req_" + UUID.randomUUID());
-    }
-
-    private String resolveTraceparent(HttpHeaders headers) {
-        return Optional.ofNullable(headers.getHeaderString("traceparent"))
-                .filter(value -> !value.isBlank())
-                .orElse(null);
     }
 }

@@ -8,7 +8,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import java.util.concurrent.TimeUnit;
 
 @ApplicationScoped
-public class GatewayMetrics {
+public class GatewayMetrics implements GatewayMetricsRecorder {
 
     private static final String EDGE_ERRORS_METRIC = "grayfile_edge_errors_total";
     private static final String APPLICATION_ERRORS_METRIC = "grayfile_application_errors_total";
@@ -20,6 +20,7 @@ public class GatewayMetrics {
         this.meterRegistry = meterRegistry;
     }
 
+    @Override
     public void recordRequestLatency(String model,
                                      String customerId,
                                      String apiKeyId,
@@ -35,10 +36,12 @@ public class GatewayMetrics {
                 .record(latencyNanos, TimeUnit.NANOSECONDS);
     }
 
+    @Override
     public void recordEdgeError(String type, String model, String backendStatus) {
         counter(EDGE_ERRORS_METRIC, type, model, backendStatus).increment();
     }
 
+    @Override
     public void recordApplicationError(String type, String model, String backendStatus) {
         counter(APPLICATION_ERRORS_METRIC, type, model, backendStatus).increment();
     }
