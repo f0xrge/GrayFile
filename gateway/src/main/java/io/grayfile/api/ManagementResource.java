@@ -7,6 +7,7 @@ import io.grayfile.domain.AuditLogEntity;
 import io.grayfile.domain.BillingWindowEntity;
 import io.grayfile.domain.CustomerEntity;
 import io.grayfile.domain.LlmModelEntity;
+import io.grayfile.domain.ModelRouteEntity;
 import io.grayfile.service.ManagementService;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
@@ -172,6 +173,91 @@ public class ManagementResource {
         ));
     }
 
+
+    @GET
+    @Path("/models/{modelId}/routes")
+    public List<ModelRouteResponse> listModelRoutes(@PathParam("modelId") String modelId) {
+        return managementService.listModelRoutes(modelId).stream().map(ModelRouteResponse::from).toList();
+    }
+
+    @POST
+    @Path("/models/{modelId}/routes")
+    public Response createModelRoute(@PathParam("modelId") String modelId,
+                                     ModelRouteUpsertRequest request,
+                                     @HeaderParam("x-actor-id") String actorId,
+                                     @HeaderParam("x-source-ip") String sourceIp,
+                                     @HeaderParam("x-request-id") String requestId,
+                                     @HeaderParam("x-change-reason") String reason,
+                                     @HeaderParam("x-second-approver-id") String secondApproverId,
+                                     @HeaderParam("x-bulk-change-size") Integer bulkChangeSize) {
+        ModelRouteEntity entity = managementService.createModelRoute(
+                modelId,
+                request.backendId(),
+                request.baseUrl(),
+                request.weight(),
+                request.active(),
+                auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
+        );
+        return Response.status(Response.Status.CREATED).entity(ModelRouteResponse.from(entity)).build();
+    }
+
+    @PUT
+    @Path("/models/{modelId}/routes/{backendId}/active")
+    public ModelRouteResponse setModelRouteActive(@PathParam("modelId") String modelId,
+                                                  @PathParam("backendId") String backendId,
+                                                  ModelRouteActiveRequest request,
+                                                  @HeaderParam("x-actor-id") String actorId,
+                                                  @HeaderParam("x-source-ip") String sourceIp,
+                                                  @HeaderParam("x-request-id") String requestId,
+                                                  @HeaderParam("x-change-reason") String reason,
+                                                  @HeaderParam("x-second-approver-id") String secondApproverId,
+                                                  @HeaderParam("x-bulk-change-size") Integer bulkChangeSize) {
+        return ModelRouteResponse.from(managementService.setModelRouteActive(
+                modelId,
+                backendId,
+                request.active(),
+                auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
+        ));
+    }
+
+    @PUT
+    @Path("/models/{modelId}/routes/{backendId}/weight")
+    public ModelRouteResponse setModelRouteWeight(@PathParam("modelId") String modelId,
+                                                  @PathParam("backendId") String backendId,
+                                                  ModelRouteWeightRequest request,
+                                                  @HeaderParam("x-actor-id") String actorId,
+                                                  @HeaderParam("x-source-ip") String sourceIp,
+                                                  @HeaderParam("x-request-id") String requestId,
+                                                  @HeaderParam("x-change-reason") String reason,
+                                                  @HeaderParam("x-second-approver-id") String secondApproverId,
+                                                  @HeaderParam("x-bulk-change-size") Integer bulkChangeSize) {
+        return ModelRouteResponse.from(managementService.setModelRouteWeight(
+                modelId,
+                backendId,
+                request.weight(),
+                auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
+        ));
+    }
+
+    @DELETE
+    @Path("/models/{modelId}/routes/{backendId}")
+    public Response deleteModelRoute(@PathParam("modelId") String modelId,
+                                     @PathParam("backendId") String backendId,
+                                     @HeaderParam("x-actor-id") String actorId,
+                                     @HeaderParam("x-source-ip") String sourceIp,
+                                     @HeaderParam("x-request-id") String requestId,
+                                     @HeaderParam("x-change-reason") String reason,
+                                     @HeaderParam("x-second-approver-id") String secondApproverId,
+                                     @HeaderParam("x-bulk-change-size") Integer bulkChangeSize,
+                                     @QueryParam("changeType") String changeType) {
+        managementService.deleteModelRoute(
+                modelId,
+                backendId,
+                auditContext(actorId, sourceIp, requestId, reason, changeType, secondApproverId, bulkChangeSize)
+        );
+        return Response.noContent().build();
+    }
+
     @GET
     @Path("/api-keys")
     public List<ApiKeyResponse> listApiKeys() {
@@ -294,6 +380,15 @@ public class ManagementResource {
     public record ApiKeyUpdateRequest(String name, Boolean active, String changeType) {
     }
 
+    public record ModelRouteUpsertRequest(String backendId, String baseUrl, Integer weight, Boolean active, String changeType) {
+    }
+
+    public record ModelRouteActiveRequest(boolean active, String changeType) {
+    }
+
+    public record ModelRouteWeightRequest(int weight, String changeType) {
+    }
+
     public record CustomerResponse(String id, String name, boolean active) {
         static CustomerResponse from(CustomerEntity entity) {
             return new CustomerResponse(entity.id, entity.name, entity.active);
@@ -309,6 +404,18 @@ public class ManagementResource {
     public record ApiKeyResponse(String id, String customerId, String name, boolean active) {
         static ApiKeyResponse from(ApiKeyEntity entity) {
             return new ApiKeyResponse(entity.id, entity.customerId, entity.name, entity.active);
+        }
+    }
+
+    public record ModelRouteResponse(String modelId,
+                                     String backendId,
+                                     String baseUrl,
+                                     int weight,
+                                     boolean active,
+                                     int version,
+                                     Instant updatedAt) {
+        static ModelRouteResponse from(ModelRouteEntity entity) {
+            return new ModelRouteResponse(entity.modelId, entity.backendId, entity.baseUrl, entity.weight, entity.active, entity.version, entity.updatedAt);
         }
     }
 
