@@ -2,6 +2,7 @@ package io.grayfile.backend;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -17,5 +18,7 @@ public interface BackendClient {
 
     @POST
     @Path("/chat/completions")
-    Response chatCompletions(JsonNode requestBody);
+    Response chatCompletions(@HeaderParam("x-request-id") String requestId,
+                             @HeaderParam("traceparent") String traceparent,
+                             JsonNode requestBody);
 }

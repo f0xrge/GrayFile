@@ -6,3 +6,7 @@ scrape_configs:
     metrics_path: /q/metrics
     static_configs:
       - targets: ['gateway:8080']
+  - job_name: grayfile-envoy
+    metrics_path: /stats/prometheus
+    static_configs:
+      - targets: ['envoy:9901']

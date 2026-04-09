@@ -12,6 +12,7 @@ static_resources:
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: public_llm_ingress
+                generate_request_id: true
                 route_config:
                   name: public_llm_route
                   virtual_hosts:
@@ -23,6 +24,11 @@ static_resources:
                           route:
                             cluster: gateway_service
                             timeout: 15s
+                            request_headers_to_add:
+                              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                                header:
+                                  key: x-request-id
+                                  value: "%REQ(X-REQUEST-ID)%"
                           rate_limits:
                             - actions:
                                 - generic_key:
@@ -41,6 +47,11 @@ static_resources:
                           route:
                             cluster: gateway_service
                             timeout: 15s
+                            request_headers_to_add:
+                              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                                header:
+                                  key: x-request-id
+                                  value: "%REQ(X-REQUEST-ID)%"
                         - match:
                             prefix: "/"
                           direct_response:
@@ -227,6 +238,7 @@ static_resources:
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: llm_gateway
+                include_request_attempt_count: true
                 route_config:
                   name: llm_backend_route
                   virtual_hosts:
@@ -238,6 +250,20 @@ static_resources:
                           route:
                             cluster: llm_backend
                             timeout: 5s
+                            request_headers_to_add:
+                              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                                header:
+                                  key: x-request-id
+                                  value: "%REQ(X-REQUEST-ID)%"
+                            response_headers_to_add:
+                              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                                header:
+                                  key: x-envoy-response-flags
+                                  value: "%RESPONSE_FLAGS%"
+                              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                                header:
+                                  key: x-envoy-attempt-count
+                                  value: "%REQ(X-ENVOY-ATTEMPT-COUNT)%"
                             retry_policy:
                               retry_on: connect-failure,refused-stream,retriable-status-codes,5xx,gateway-error
                               num_retries: 2

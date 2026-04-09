@@ -25,6 +25,7 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -91,7 +92,7 @@ class LlmProxyResourceTest {
 
     @Test
     void shouldAcceptKnownScopeAndPersistUsage() throws Exception {
-        when(backendClient.chatCompletions(any())).thenReturn(Response.ok(
+        when(backendClient.chatCompletions(anyString(), any(), any())).thenReturn(Response.ok(
                 objectMapper.readTree("""
                         {
                           "id": "resp-1",
@@ -121,7 +122,8 @@ class LlmProxyResourceTest {
                 .then()
                 .statusCode(200)
                 .body("id", equalTo("resp-1"))
-                .body("usage.total_tokens", equalTo(20));
+                .body("usage.total_tokens", equalTo(20))
+                .header("x-request-id", equalTo("req-1"));
 
         assertEquals(1L, usageEventRepository.count());
         assertEquals(1L, billingWindowRepository.count());
