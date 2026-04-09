@@ -10,12 +10,28 @@ It forwards OpenAI-compatible requests, extracts usage data from backend respons
 
 ```text
 Clients
-  -> GrayFile Gateway
-      -> Envoy (egress resilience hop)
+  -> Envoy (edge + egress policies)
+      -> GrayFile Gateway
           -> Inference Backend (vLLM, NIM, other OpenAI-compatible API)
       -> PostgreSQL
       -> Prometheus / Grafana
 ```
+
+## Explicit two-layer responsibility model
+
+### Layer 1 — Envoy (network and L7 policy plane)
+- Routing (public vs management listeners, upstream cluster selection)
+- TLS termination and upstream TLS policy
+- Retries / per-try timeout / total timeout budgets
+- Circuit breaker and outlier detection
+- Rate limiting (edge throttling and overload absorption)
+- L7 observability (status codes, latency buckets, retry/circuit/throttle signals)
+
+### Layer 2 — GrayFile (business and metering plane)
+- Billing scope validation (`customer_id`, `api_key_id`, `model`)
+- Usage extraction from backend payloads (`usage.prompt_tokens`, `usage.completion_tokens`, `usage.total_tokens`)
+- Metering event persistence in PostgreSQL
+- Billing window lifecycle management (open/close/carry-over logic)
 
 ## Main responsibilities
 
@@ -36,6 +52,19 @@ Clients
 - Close a window when the first threshold is reached
 - Open the next billing window immediately after closure
 - Carry token overflow into the next window when required
+
+## GrayFile-only business invariants (must not move to Envoy)
+
+The following invariants stay strictly in GrayFile to preserve correctness and auditability:
+
+1. **Auditability invariant**
+   - Every billable decision must be traceable to persisted domain data (`request_id`, billing scope, model, raw usage, resulting window transition).
+   - Edge proxies may enforce transport policy, but only GrayFile can authoritatively attach business identity and produce auditable billing records.
+
+2. **DB atomicity invariant**
+   - Usage event persistence and billing-window transition must be committed atomically in the same transactional boundary.
+   - No partial state is allowed (e.g., event persisted without corresponding window update, or window change without event lineage).
+   - Retry/replay handling must preserve idempotency semantics at the GrayFile persistence boundary.
 
 ### Persistence layer
 - Store usage events
@@ -81,6 +110,76 @@ Dashboards for operational visibility.
 6. GrayFile persists a usage event
 7. GrayFile updates or closes the billing window
 8. GrayFile returns the response to the client
+
+## Request path flow with Envoy decision points
+
+```text
+Client
+  |
+  v
+[Envoy ingress listener]
+  |- Decision A: listener/path match?
+  |    |- no -> 404
+  |    '- yes
+  |- Decision B (management only): JWT valid?
+  |    |- no -> 401
+  |    '- yes
+  |- Decision C (management only): RBAC identity/IP allowed?
+  |    |- no -> 403
+  |    '- yes
+  |- Decision D (public LLM only): local rate limit exceeded?
+  |    |- yes -> 429 (throttled at edge)
+  |    '- no
+  v
+[GrayFile]
+  |- Decision E: billing scope headers valid?
+  |    |- no -> 4xx (validation error)
+  |    '- yes
+  |- Forward to Envoy egress cluster for backend call
+  v
+[Envoy egress]
+  |- Decision F: retryable failure?
+  |    |- yes -> retry (bounded budget)
+  |    '- no
+  |- Decision G: circuit open / timeout budget exceeded?
+  |    |- yes -> upstream error to GrayFile
+  |    '- no -> backend response
+  v
+[GrayFile]
+  |- Decision H: usage payload present/valid?
+  |    |- no -> return response/error without billable write
+  |    '- yes
+  |- Atomic DB transaction:
+  |    1) persist usage event
+  |    2) update/close/open billing window
+  v
+Client response
+```
+
+## Incremental migration checklist (Envoy-first, then tuning, then scale split)
+
+### Phase 1 — Edge policies first (functional parity)
+- [ ] Route all `/llm/v1/*` and `/management/v1/*` through Envoy listeners with explicit path isolation.
+- [ ] Enable TLS + JWT/RBAC on management ingress.
+- [ ] Enable baseline local rate limit on public LLM ingress.
+- [ ] Keep GrayFile business logic unchanged (scope validation, usage extraction, billing persistence).
+- [ ] Confirm no billing invariant moved out of GrayFile.
+
+### Phase 2 — Policy tuning and SLO hardening
+- [ ] Tune retry conditions, per-try timeout, and total timeout to match target latency SLOs.
+- [ ] Tune circuit breaker and outlier detection thresholds with production telemetry.
+- [ ] Tune rate-limit descriptors/quotas by tenant tier and model profile.
+- [ ] Add dashboards/alerts for 401/403/404/429, retries, ejections, and tail latency.
+- [ ] Run controlled load and failure-injection tests before each threshold change.
+
+### Phase 3 — Separation of scale planes
+- [ ] Scale Envoy independently for edge traffic patterns (burst handling, TLS/L7 policy throughput).
+- [ ] Scale GrayFile independently for business workload patterns (DB writes, billing window churn).
+- [ ] Introduce dedicated autoscaling signals:
+  - Envoy: RPS, p95/p99 latency, 429 rate, retry volume.
+  - GrayFile: DB transaction latency, write throughput, window transition rate.
+- [ ] Validate that independent scaling does not violate GrayFile atomicity/auditability invariants.
+- [ ] (Optional) externalize rate-limit service while preserving descriptor contract.
 
 
 ### LLM egress hop (Envoy)
