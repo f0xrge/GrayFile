@@ -45,6 +45,12 @@ public class BillingService implements BillingUsageHandler {
                             int completionTokens,
                             int totalTokens,
                             Instant eventTime) {
+        Optional<UsageEventEntity> existing = usageEventRepository.findByBusinessKey(requestId, customerId, apiKeyId, model);
+        if (existing.isPresent()) {
+            logDeduplicated(existing.get(), requestId, customerId, apiKeyId, model, eventTime);
+            return;
+        }
+
         UsageEventEntity usageEvent = new UsageEventEntity();
         usageEvent.id = UUID.randomUUID();
         usageEvent.customerId = customerId;
@@ -55,7 +61,17 @@ public class BillingService implements BillingUsageHandler {
         usageEvent.completionTokens = completionTokens;
         usageEvent.totalTokens = totalTokens;
         usageEvent.eventTime = eventTime;
-        usageEventRepository.persist(usageEvent);
+        try {
+            usageEventRepository.persistAndFlush(usageEvent);
+        } catch (RuntimeException exception) {
+            Optional<UsageEventEntity> duplicated = usageEventRepository.findByBusinessKey(requestId, customerId, apiKeyId, model);
+            if (duplicated.isPresent()) {
+                logDeduplicated(duplicated.get(), requestId, customerId, apiKeyId, model, eventTime);
+                return;
+            }
+            throw exception;
+        }
+
         billingMetrics.recordUsageEvent(totalTokens);
         auditLogService.logEvent(
                 "BILLING_USAGE_INGESTED",
@@ -147,6 +163,27 @@ public class BillingService implements BillingUsageHandler {
                         "closure_reason", reason
                 ),
                 closeAt
+        );
+    }
+
+    private void logDeduplicated(UsageEventEntity existing,
+                                 String requestId,
+                                 String customerId,
+                                 String apiKeyId,
+                                 String model,
+                                 Instant occurredAt) {
+        auditLogService.logEvent(
+                "BILLING_USAGE_DEDUPLICATED",
+                "billing-service",
+                "usage_event",
+                existing.id.toString(),
+                auditLogService.payloadOf(
+                        "request_id", requestId,
+                        "customer_id", customerId,
+                        "api_key_id", apiKeyId,
+                        "model", model
+                ),
+                occurredAt
         );
     }
 }
