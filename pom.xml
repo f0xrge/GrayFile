@@ -19,6 +19,9 @@
     <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
     <quarkus.platform.version>3.33.1</quarkus.platform.version>
     <surefire-plugin.version>3.5.2</surefire-plugin.version>
+    <jacoco-plugin.version>0.8.14</jacoco-plugin.version>
+    <jacoco.minimum.line.coverage>0.15</jacoco.minimum.line.coverage>
+    <jacoco.minimum.branch.coverage>0.05</jacoco.minimum.branch.coverage>
   </properties>
 
   <dependencyManagement>

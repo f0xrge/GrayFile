@@ -90,7 +90,7 @@
       <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
-        <version>0.8.12</version>
+        <version>${jacoco-plugin.version}</version>
         <executions>
           <execution>
             <id>prepare-agent</id>
@@ -119,12 +119,12 @@
                     <limit>
                       <counter>LINE</counter>
                       <value>COVEREDRATIO</value>
-                      <minimum>0.80</minimum>
+                      <minimum>${jacoco.minimum.line.coverage}</minimum>
                     </limit>
                     <limit>
                       <counter>BRANCH</counter>
                       <value>COVEREDRATIO</value>
-                      <minimum>0.70</minimum>
+                      <minimum>${jacoco.minimum.branch.coverage}</minimum>
                     </limit>
                   </limits>
                 </rule>

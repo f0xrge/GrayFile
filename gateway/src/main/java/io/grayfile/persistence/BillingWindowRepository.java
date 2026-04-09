@@ -35,7 +35,7 @@ public class BillingWindowRepository implements PanacheRepositoryBase<BillingWin
             parameters.and("apiKeyId", apiKeyId);
         }
         if (startFrom != null) {
-            query.append(" and coalesce(windowEnd, windowStart) >= :startFrom");
+            query.append(" and (windowEnd is null or windowEnd >= :startFrom)");
             parameters.and("startFrom", startFrom);
         }
         if (endTo != null) {

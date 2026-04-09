@@ -16,7 +16,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -54,7 +53,6 @@ class BillingServiceTest {
     @BeforeEach
     void setUp() {
         billingService = new BillingService(usageEventRepository, billingWindowRepository, billingMetrics, auditLogService);
-        when(auditLogService.payloadOf(any())).thenReturn(Map.of());
     }
 
     @Test
