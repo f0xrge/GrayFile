@@ -7,6 +7,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 
@@ -31,7 +33,8 @@ public class AuditLogEntity extends PanacheEntityBase {
     @Column(name = "entity_id", nullable = false)
     public String entityId;
 
-    @Column(name = "payload_json", nullable = false, columnDefinition = "TEXT")
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "payload_json", nullable = false, columnDefinition = "jsonb")
     public String payloadJson;
 
     @Column(name = "occurred_at", nullable = false)

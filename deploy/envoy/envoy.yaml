@@ -21,37 +21,24 @@ static_resources:
                       routes:
                         - match:
                             path: "/llm/v1/chat/completions"
+                          request_headers_to_add:
+                            - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                              header:
+                                key: x-request-id
+                                value: "%REQ(X-REQUEST-ID)%"
                           route:
                             cluster: gateway_service
                             timeout: 15s
-                            request_headers_to_add:
-                              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
-                                header:
-                                  key: x-request-id
-                                  value: "%REQ(X-REQUEST-ID)%"
-                          rate_limits:
-                            - actions:
-                                - generic_key:
-                                    descriptor_value: "chat_completions"
-                                - request_headers:
-                                    header_name: "x-customer-id"
-                                    descriptor_key: "customer_id"
-                                - request_headers:
-                                    header_name: "x-api-key-id"
-                                    descriptor_key: "api_key_id"
-                                - request_headers:
-                                    header_name: "x-llm-model"
-                                    descriptor_key: "model"
                         - match:
                             prefix: "/llm/v1/"
+                          request_headers_to_add:
+                            - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                              header:
+                                key: x-request-id
+                                value: "%REQ(X-REQUEST-ID)%"
                           route:
                             cluster: gateway_service
                             timeout: 15s
-                            request_headers_to_add:
-                              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
-                                header:
-                                  key: x-request-id
-                                  value: "%REQ(X-REQUEST-ID)%"
                         - match:
                             prefix: "/"
                           direct_response:
@@ -238,7 +225,6 @@ static_resources:
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: llm_gateway
-                include_request_attempt_count: true
                 route_config:
                   name: llm_backend_route
                   virtual_hosts:
@@ -247,23 +233,23 @@ static_resources:
                       routes:
                         - match:
                             prefix: "/"
+                          request_headers_to_add:
+                            - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                              header:
+                                key: x-request-id
+                                value: "%REQ(X-REQUEST-ID)%"
+                          response_headers_to_add:
+                            - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                              header:
+                                key: x-envoy-response-flags
+                                value: "%RESPONSE_FLAGS%"
+                            - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                              header:
+                                key: x-envoy-attempt-count
+                                value: "%REQ(X-ENVOY-ATTEMPT-COUNT)%"
                           route:
                             cluster: llm_backend
                             timeout: 5s
-                            request_headers_to_add:
-                              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
-                                header:
-                                  key: x-request-id
-                                  value: "%REQ(X-REQUEST-ID)%"
-                            response_headers_to_add:
-                              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
-                                header:
-                                  key: x-envoy-response-flags
-                                  value: "%RESPONSE_FLAGS%"
-                              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
-                                header:
-                                  key: x-envoy-attempt-count
-                                  value: "%REQ(X-ENVOY-ATTEMPT-COUNT)%"
                             retry_policy:
                               retry_on: connect-failure,refused-stream,retriable-status-codes,5xx,gateway-error
                               num_retries: 2
