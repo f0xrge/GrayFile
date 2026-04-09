@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.hasItems;
@@ -297,6 +298,14 @@ class ManagementResourceTest {
 
         given()
                 .contentType("application/json")
+                .body(Map.of("backendId", "backend-b", "baseUrl", "http://backend-b:18080", "weight", 10, "active", true))
+                .when()
+                .post("/management/v1/models/gpt-4o-mini/routes")
+                .then()
+                .statusCode(201);
+
+        given()
+                .contentType("application/json")
                 .body(Map.of("active", false))
                 .when()
                 .put("/management/v1/models/gpt-4o-mini/routes/backend-a/active")
@@ -318,6 +327,60 @@ class ManagementResourceTest {
                 .delete("/management/v1/models/gpt-4o-mini/routes/backend-a")
                 .then()
                 .statusCode(204);
+    }
+
+    @Test
+    void shouldRejectInvalidModelRouteBaseUrl() {
+        given()
+                .contentType("application/json")
+                .body(Map.of("id", "gpt-4o-mini", "displayName", "GPT-4o Mini", "provider", "openai"))
+                .when()
+                .post("/management/v1/models")
+                .then()
+                .statusCode(201);
+
+        given()
+                .contentType("application/json")
+                .body(Map.of("backendId", "backend-a", "baseUrl", "backend-a:18080", "weight", 90, "active", true))
+                .when()
+                .post("/management/v1/models/gpt-4o-mini/routes")
+                .then()
+                .statusCode(400)
+                .body(containsString("base url"));
+    }
+
+    @Test
+    void shouldRollbackWhenDeletingLastActiveRoute() {
+        given()
+                .contentType("application/json")
+                .body(Map.of("id", "gpt-4o-mini", "displayName", "GPT-4o Mini", "provider", "openai"))
+                .when()
+                .post("/management/v1/models")
+                .then()
+                .statusCode(201);
+
+        given()
+                .contentType("application/json")
+                .body(Map.of("backendId", "backend-a", "baseUrl", "http://backend-a:18080", "weight", 90, "active", true))
+                .when()
+                .post("/management/v1/models/gpt-4o-mini/routes")
+                .then()
+                .statusCode(201);
+
+        given()
+                .when()
+                .delete("/management/v1/models/gpt-4o-mini/routes/backend-a")
+                .then()
+                .statusCode(400)
+                .body(containsString("at least one active route"));
+
+        given()
+                .when()
+                .get("/management/v1/models/gpt-4o-mini/routes")
+                .then()
+                .statusCode(200)
+                .body("$", hasSize(1))
+                .body("[0].backendId", equalTo("backend-a"));
     }
 
     private void seedManagementScope() throws Exception {
