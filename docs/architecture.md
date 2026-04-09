@@ -32,6 +32,21 @@ Clients
 - Usage extraction from backend payloads (`usage.prompt_tokens`, `usage.completion_tokens`, `usage.total_tokens`)
 - Metering event persistence in PostgreSQL
 - Billing window lifecycle management (open/close/carry-over logic)
+- Dynamic backend routing by model (`ModelRoutingService`) with transactional config guardrails
+
+## Runtime routing strategy choice
+
+GrayFile currently uses **dynamic in-app routing** (short-term strategy) instead of Envoy xDS control-plane updates:
+
+- Multiple backend targets are configured per model in `model_routes`.
+- Request-time target selection is resolved in GrayFile through `ModelRoutingService` (weighted + failover order).
+- GrayFile maintains a backend HTTP client pool keyed by `base_url` to avoid rebuilding clients on each request.
+
+### Guardrails applied to routing configuration
+
+- **Endpoint syntax validation**: backend `base_url` must be absolute `http(s)` with a host.
+- **Backend healthcheck before activation**: active route changes are validated against a health endpoint before commit.
+- **Atomic rollback on invalid changes**: route writes run in a transaction and are rejected/rolled back if guardrails fail (for example deleting the last active route).
 
 ## Main responsibilities
 

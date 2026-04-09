@@ -18,6 +18,8 @@ import jakarta.transaction.Transactional;
 import jakarta.ws.rs.NotFoundException;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -34,10 +36,12 @@ public class ManagementService {
     private final AuditLogRepository auditLogRepository;
     private final AuditLogService auditLogService;
     private final AlertService alertService;
+    private final BackendHealthcheckService backendHealthcheckService;
     private final ModelRouteRepository modelRouteRepository;
     private final Event<ModelRoutesChangedEvent> modelRoutesChangedEvent;
     private final boolean twoPersonRuleEnabled;
     private final int bulkRoutingAlertThreshold;
+    private final boolean requireActiveRouteGuardrail;
 
     public ManagementService(CustomerRepository customerRepository,
                              LlmModelRepository llmModelRepository,
@@ -46,10 +50,12 @@ public class ManagementService {
                              AuditLogRepository auditLogRepository,
                              AuditLogService auditLogService,
                              AlertService alertService,
+                             BackendHealthcheckService backendHealthcheckService,
                              ModelRouteRepository modelRouteRepository,
                              Event<ModelRoutesChangedEvent> modelRoutesChangedEvent,
                              @ConfigProperty(name = "grayfile.management.two-person-rule.enabled", defaultValue = "false") boolean twoPersonRuleEnabled,
-                             @ConfigProperty(name = "grayfile.management.alert.bulk-routing-threshold", defaultValue = "25") int bulkRoutingAlertThreshold) {
+                             @ConfigProperty(name = "grayfile.management.alert.bulk-routing-threshold", defaultValue = "25") int bulkRoutingAlertThreshold,
+                             @ConfigProperty(name = "grayfile.routing.guardrails.require-active-route", defaultValue = "true") boolean requireActiveRouteGuardrail) {
         this.customerRepository = customerRepository;
         this.llmModelRepository = llmModelRepository;
         this.apiKeyRepository = apiKeyRepository;
@@ -57,10 +63,12 @@ public class ManagementService {
         this.auditLogRepository = auditLogRepository;
         this.auditLogService = auditLogService;
         this.alertService = alertService;
+        this.backendHealthcheckService = backendHealthcheckService;
         this.modelRouteRepository = modelRouteRepository;
         this.modelRoutesChangedEvent = modelRoutesChangedEvent;
         this.twoPersonRuleEnabled = twoPersonRuleEnabled;
         this.bulkRoutingAlertThreshold = bulkRoutingAlertThreshold;
+        this.requireActiveRouteGuardrail = requireActiveRouteGuardrail;
     }
 
     public List<CustomerEntity> listCustomers() {
@@ -215,9 +223,12 @@ public class ManagementService {
         ModelRouteEntity entity = new ModelRouteEntity();
         entity.modelId = modelId;
         entity.backendId = backendId;
-        entity.baseUrl = normalizeRequired(baseUrl, "base url");
+        entity.baseUrl = normalizeBaseUrl(baseUrl);
         entity.weight = normalizeWeight(weight);
         entity.active = active == null || active;
+        if (entity.active) {
+            backendHealthcheckService.verifyReachable(entity.baseUrl);
+        }
         entity.version = 1;
         entity.updatedAt = Instant.now();
         modelRouteRepository.persist(entity);
@@ -236,6 +247,10 @@ public class ManagementService {
                 .orElseThrow(() -> new NotFoundException("route not found for model=" + modelId + " backend=" + backendId));
         Map<String, Object> oldState = modelRouteState(entity);
         entity.active = active;
+        if (entity.active) {
+            backendHealthcheckService.verifyReachable(entity.baseUrl);
+        }
+        enforceActiveRouteGuardrail(entity.modelId);
         entity.version += 1;
         entity.updatedAt = Instant.now();
         Map<String, Object> newState = modelRouteState(entity);
@@ -253,6 +268,10 @@ public class ManagementService {
                 .orElseThrow(() -> new NotFoundException("route not found for model=" + modelId + " backend=" + backendId));
         Map<String, Object> oldState = modelRouteState(entity);
         entity.weight = normalizeWeight(weight);
+        if (entity.active) {
+            backendHealthcheckService.verifyReachable(entity.baseUrl);
+        }
+        enforceActiveRouteGuardrail(entity.modelId);
         entity.version += 1;
         entity.updatedAt = Instant.now();
         Map<String, Object> newState = modelRouteState(entity);
@@ -269,6 +288,7 @@ public class ManagementService {
                 .orElseThrow(() -> new NotFoundException("route not found for model=" + normalizedModelId + " backend=" + normalizedBackendId));
         Map<String, Object> oldState = modelRouteState(existing);
         modelRouteRepository.delete(existing);
+        enforceActiveRouteGuardrail(normalizedModelId);
         auditManagementChange("MODEL_ROUTE_DELETED", "model_route", normalizedModelId + ":" + normalizedBackendId, context, oldState, Map.of());
         modelRoutesChangedEvent.fire(new ModelRoutesChangedEvent(normalizedModelId));
     }
@@ -481,6 +501,39 @@ public class ManagementService {
             throw new IllegalArgumentException("route weight must be > 0");
         }
         return weight;
+    }
+
+    private String normalizeBaseUrl(String baseUrl) {
+        String normalized = normalizeRequired(baseUrl, "base url");
+        try {
+            URI uri = new URI(normalized);
+            if (!uri.isAbsolute()) {
+                throw new IllegalArgumentException("base url must be absolute (http/https): " + normalized);
+            }
+            String scheme = uri.getScheme();
+            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+                throw new IllegalArgumentException("base url must use http or https: " + normalized);
+            }
+            if (uri.getHost() == null || uri.getHost().isBlank()) {
+                throw new IllegalArgumentException("base url must include a host: " + normalized);
+            }
+            if (uri.getRawQuery() != null || uri.getRawFragment() != null) {
+                throw new IllegalArgumentException("base url must not include query params or fragments: " + normalized);
+            }
+            return uri.toString().endsWith("/") ? uri.toString().substring(0, uri.toString().length() - 1) : uri.toString();
+        } catch (URISyntaxException exception) {
+            throw new IllegalArgumentException("invalid base url syntax: " + normalized, exception);
+        }
+    }
+
+    private void enforceActiveRouteGuardrail(String modelId) {
+        if (!requireActiveRouteGuardrail) {
+            return;
+        }
+        long activeRoutes = modelRouteRepository.listActiveByModel(modelId).size();
+        if (activeRoutes == 0) {
+            throw new IllegalArgumentException("at least one active route must exist for model: " + modelId + " (config rolled back)");
+        }
     }
 
     private String normalizeRequired(String value, String label) {
