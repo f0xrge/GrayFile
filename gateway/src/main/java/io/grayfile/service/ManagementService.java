@@ -22,15 +22,18 @@ public class ManagementService {
     private final LlmModelRepository llmModelRepository;
     private final ApiKeyRepository apiKeyRepository;
     private final BillingWindowRepository billingWindowRepository;
+    private final AuditLogService auditLogService;
 
     public ManagementService(CustomerRepository customerRepository,
                              LlmModelRepository llmModelRepository,
                              ApiKeyRepository apiKeyRepository,
-                             BillingWindowRepository billingWindowRepository) {
+                             BillingWindowRepository billingWindowRepository,
+                             AuditLogService auditLogService) {
         this.customerRepository = customerRepository;
         this.llmModelRepository = llmModelRepository;
         this.apiKeyRepository = apiKeyRepository;
         this.billingWindowRepository = billingWindowRepository;
+        this.auditLogService = auditLogService;
     }
 
     public List<CustomerEntity> listCustomers() {
@@ -53,6 +56,8 @@ public class ManagementService {
         entity.name = normalizeRequired(name, "customer name");
         entity.active = active == null || active;
         customerRepository.persist(entity);
+        auditLogService.logEvent("CUSTOMER_CREATED", "management-service", "customer", entity.id,
+                auditLogService.payloadOf("name", entity.name, "active", entity.active), Instant.now());
         return entity;
     }
 
@@ -61,6 +66,8 @@ public class ManagementService {
         CustomerEntity entity = getCustomer(customerId);
         entity.name = normalizeRequired(name, "customer name");
         entity.active = active == null || active;
+        auditLogService.logEvent("CUSTOMER_UPDATED", "management-service", "customer", entity.id,
+                auditLogService.payloadOf("name", entity.name, "active", entity.active), Instant.now());
         return entity;
     }
 
@@ -68,6 +75,8 @@ public class ManagementService {
     public CustomerEntity deactivateCustomer(String customerId) {
         CustomerEntity entity = getCustomer(customerId);
         entity.active = false;
+        auditLogService.logEvent("CUSTOMER_DEACTIVATED", "management-service", "customer", entity.id,
+                auditLogService.payloadOf("active", entity.active), Instant.now());
         return entity;
     }
 
@@ -92,6 +101,8 @@ public class ManagementService {
         entity.provider = normalizeRequired(provider, "model provider");
         entity.active = active == null || active;
         llmModelRepository.persist(entity);
+        auditLogService.logEvent("MODEL_CREATED", "management-service", "model", entity.id,
+                auditLogService.payloadOf("display_name", entity.displayName, "provider", entity.provider, "active", entity.active), Instant.now());
         return entity;
     }
 
@@ -101,6 +112,8 @@ public class ManagementService {
         entity.displayName = normalizeRequired(displayName, "model display name");
         entity.provider = normalizeRequired(provider, "model provider");
         entity.active = active == null || active;
+        auditLogService.logEvent("MODEL_UPDATED", "management-service", "model", entity.id,
+                auditLogService.payloadOf("display_name", entity.displayName, "provider", entity.provider, "active", entity.active), Instant.now());
         return entity;
     }
 
@@ -108,6 +121,8 @@ public class ManagementService {
     public LlmModelEntity deactivateModel(String modelId) {
         LlmModelEntity entity = getModel(modelId);
         entity.active = false;
+        auditLogService.logEvent("MODEL_DEACTIVATED", "management-service", "model", entity.id,
+                auditLogService.payloadOf("active", entity.active), Instant.now());
         return entity;
     }
 
@@ -133,6 +148,8 @@ public class ManagementService {
         entity.name = normalizeRequired(name, "api key name");
         entity.active = active == null || active;
         apiKeyRepository.persist(entity);
+        auditLogService.logEvent("API_KEY_CREATED", "management-service", "api_key", entity.id,
+                auditLogService.payloadOf("customer_id", entity.customerId, "name", entity.name, "active", entity.active), Instant.now());
         return entity;
     }
 
@@ -141,6 +158,8 @@ public class ManagementService {
         ApiKeyEntity entity = getApiKey(apiKeyId);
         entity.name = normalizeRequired(name, "api key name");
         entity.active = active == null || active;
+        auditLogService.logEvent("API_KEY_UPDATED", "management-service", "api_key", entity.id,
+                auditLogService.payloadOf("name", entity.name, "active", entity.active), Instant.now());
         return entity;
     }
 
@@ -148,6 +167,8 @@ public class ManagementService {
     public ApiKeyEntity deactivateApiKey(String apiKeyId) {
         ApiKeyEntity entity = getApiKey(apiKeyId);
         entity.active = false;
+        auditLogService.logEvent("API_KEY_DEACTIVATED", "management-service", "api_key", entity.id,
+                auditLogService.payloadOf("active", entity.active), Instant.now());
         return entity;
     }
 
