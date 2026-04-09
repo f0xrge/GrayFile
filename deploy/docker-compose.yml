@@ -10,11 +10,11 @@ services:
       GRAYFILE_DB_URL: jdbc:postgresql://postgres:5432/grayfile
       GRAYFILE_DB_USER: grayfile
       GRAYFILE_DB_PASSWORD: grayfile
-      GRAYFILE_BACKEND_URL: http://mock-backend:8080
+      GRAYFILE_BACKEND_URL: http://envoy:10000
     depends_on:
       postgres:
         condition: service_healthy
-      mock-backend:
+      envoy:
         condition: service_started
 
   postgres:
@@ -43,6 +43,19 @@ services:
     volumes:
       - ./mock-backend:/home/wiremock
 
+
+  envoy:
+    image: envoyproxy/envoy:v1.33.2
+    container_name: grayfile-envoy
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
+    ports:
+      - "10000:10000"
+      - "9901:9901"
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    depends_on:
+      mock-backend:
+        condition: service_started
   prometheus:
     image: prom/prometheus:v3.2.1
     container_name: grayfile-prometheus
