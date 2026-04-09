@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.grayfile.backend.BackendClient;
 import io.grayfile.billing.BillingService;
 import io.grayfile.metrics.GatewayMetrics;
+import io.grayfile.service.AuditLogService;
 import io.grayfile.service.ManagementService;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
@@ -29,15 +30,18 @@ public class LlmProxyResource {
     private final BillingService billingService;
     private final ManagementService managementService;
     private final GatewayMetrics gatewayMetrics;
+    private final AuditLogService auditLogService;
 
     public LlmProxyResource(@RestClient BackendClient backendClient,
                             BillingService billingService,
                             ManagementService managementService,
-                            GatewayMetrics gatewayMetrics) {
+                            GatewayMetrics gatewayMetrics,
+                            AuditLogService auditLogService) {
         this.backendClient = backendClient;
         this.billingService = billingService;
         this.managementService = managementService;
         this.gatewayMetrics = gatewayMetrics;
+        this.auditLogService = auditLogService;
     }
 
     @POST
@@ -72,6 +76,20 @@ public class LlmProxyResource {
         String requestId = resolveRequestId(headers);
         String traceparent = resolveTraceparent(headers);
         Instant startedAt = Instant.now();
+
+        auditLogService.logEvent(
+                "MODEL_ROUTING_DECISION",
+                "gateway-router",
+                "routing",
+                requestId,
+                auditLogService.payloadOf(
+                        "customer_id", customerId,
+                        "api_key_id", apiKeyId,
+                        "model", modelId,
+                        "decision", "route_to_backend"
+                ),
+                startedAt
+        );
 
         try (Response backendResponse = backendClient.chatCompletions(requestId, traceparent, requestBody)) {
             JsonNode payload = backendResponse.readEntity(JsonNode.class);

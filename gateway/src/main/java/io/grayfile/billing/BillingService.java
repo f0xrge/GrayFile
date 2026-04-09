@@ -5,6 +5,7 @@ import io.grayfile.domain.UsageEventEntity;
 import io.grayfile.metrics.BillingMetrics;
 import io.grayfile.persistence.BillingWindowRepository;
 import io.grayfile.persistence.UsageEventRepository;
+import io.grayfile.service.AuditLogService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 
@@ -22,13 +23,16 @@ public class BillingService {
     private final UsageEventRepository usageEventRepository;
     private final BillingWindowRepository billingWindowRepository;
     private final BillingMetrics billingMetrics;
+    private final AuditLogService auditLogService;
 
     public BillingService(UsageEventRepository usageEventRepository,
                           BillingWindowRepository billingWindowRepository,
-                          BillingMetrics billingMetrics) {
+                          BillingMetrics billingMetrics,
+                          AuditLogService auditLogService) {
         this.usageEventRepository = usageEventRepository;
         this.billingWindowRepository = billingWindowRepository;
         this.billingMetrics = billingMetrics;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
@@ -52,6 +56,22 @@ public class BillingService {
         usageEvent.eventTime = eventTime;
         usageEventRepository.persist(usageEvent);
         billingMetrics.recordUsageEvent(totalTokens);
+        auditLogService.logEvent(
+                "BILLING_USAGE_INGESTED",
+                "billing-service",
+                "usage_event",
+                usageEvent.id.toString(),
+                auditLogService.payloadOf(
+                        "request_id", requestId,
+                        "customer_id", customerId,
+                        "api_key_id", apiKeyId,
+                        "model", model,
+                        "prompt_tokens", promptTokens,
+                        "completion_tokens", completionTokens,
+                        "total_tokens", totalTokens
+                ),
+                eventTime
+        );
 
         int remaining = totalTokens;
         while (remaining > 0) {
@@ -90,6 +110,19 @@ public class BillingService {
         entity.tokenTotal = 0;
         entity.active = true;
         billingWindowRepository.persist(entity);
+        auditLogService.logEvent(
+                "BILLING_WINDOW_OPENED",
+                "billing-service",
+                "billing_window",
+                entity.id.toString(),
+                auditLogService.payloadOf(
+                        "customer_id", customerId,
+                        "api_key_id", apiKeyId,
+                        "model", model,
+                        "window_start", startTime
+                ),
+                startTime
+        );
         return entity;
     }
 
@@ -98,5 +131,21 @@ public class BillingService {
         window.closureReason = reason;
         window.active = false;
         billingMetrics.recordWindowClose();
+        auditLogService.logEvent(
+                "BILLING_WINDOW_CLOSED",
+                "billing-service",
+                "billing_window",
+                window.id.toString(),
+                auditLogService.payloadOf(
+                        "customer_id", window.customerId,
+                        "api_key_id", window.apiKeyId,
+                        "model", window.model,
+                        "window_start", window.windowStart,
+                        "window_end", closeAt,
+                        "token_total", window.tokenTotal,
+                        "closure_reason", reason
+                ),
+                closeAt
+        );
     }
 }

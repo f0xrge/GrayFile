@@ -6,6 +6,8 @@ import io.grayfile.domain.ApiKeyEntity;
 import io.grayfile.domain.CustomerEntity;
 import io.grayfile.domain.LlmModelEntity;
 import io.grayfile.persistence.ApiKeyRepository;
+import io.grayfile.persistence.AuditExportStateRepository;
+import io.grayfile.persistence.AuditLogRepository;
 import io.grayfile.persistence.BillingWindowRepository;
 import io.grayfile.persistence.CustomerRepository;
 import io.grayfile.persistence.LlmModelRepository;
@@ -49,6 +51,12 @@ class LlmProxyResourceTest {
     BillingWindowRepository billingWindowRepository;
 
     @Inject
+    AuditLogRepository auditLogRepository;
+
+    @Inject
+    AuditExportStateRepository auditExportStateRepository;
+
+    @Inject
     ObjectMapper objectMapper;
 
     @InjectMock
@@ -64,6 +72,8 @@ class LlmProxyResourceTest {
         userTransaction.begin();
         billingWindowRepository.deleteAll();
         usageEventRepository.deleteAll();
+        auditLogRepository.deleteAll();
+        auditExportStateRepository.deleteAll();
         apiKeyRepository.deleteAll();
         llmModelRepository.deleteAll();
         customerRepository.deleteAll();
