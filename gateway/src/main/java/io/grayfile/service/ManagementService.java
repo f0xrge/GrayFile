@@ -226,6 +226,8 @@ public class ManagementService {
         entity.baseUrl = normalizeBaseUrl(baseUrl);
         entity.weight = normalizeWeight(weight);
         entity.active = active == null || active;
+        // A route can be defined ahead of time while the backend is still offline.
+        // Availability is enforced only when the route is active.
         if (entity.active) {
             backendHealthcheckService.verifyReachable(entity.baseUrl);
         }
@@ -247,6 +249,7 @@ public class ManagementService {
                 .orElseThrow(() -> new NotFoundException("route not found for model=" + modelId + " backend=" + backendId));
         Map<String, Object> oldState = modelRouteState(entity);
         entity.active = active;
+        // Activating a route is the operational handoff, so the backend must answer the healthcheck.
         if (entity.active) {
             backendHealthcheckService.verifyReachable(entity.baseUrl);
         }

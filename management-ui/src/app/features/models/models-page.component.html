@@ -119,7 +119,10 @@
                 </mat-form-field>
 
                 <div class="full">
-                  <mat-slide-toggle formControlName="active">Endpoint actif</mat-slide-toggle>
+                  <mat-slide-toggle formControlName="active">Activer immediatement la route</mat-slide-toggle>
+                  <p class="form-hint">
+                    Une route peut etre enregistree inactive meme si le backend n'est pas encore pret. L'activation verifiera ensuite sa disponibilite.
+                  </p>
                 </div>
               </div>
             </form>

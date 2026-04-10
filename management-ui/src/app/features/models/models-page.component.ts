@@ -54,7 +54,7 @@ export class ModelsPageComponent {
     backendId: ['', Validators.required],
     baseUrl: ['', Validators.required],
     weight: [100, [Validators.required, Validators.min(0)]],
-    active: [true]
+    active: [false]
   });
 
   constructor() {
@@ -155,7 +155,7 @@ export class ModelsPageComponent {
 
   protected resetRouteForm(): void {
     this.selectedRouteId.set(null);
-    this.routeForm.reset({ backendId: '', baseUrl: '', weight: 100, active: true });
+    this.routeForm.reset({ backendId: '', baseUrl: '', weight: 100, active: false });
     this.routeForm.controls.backendId.enable();
   }
 
