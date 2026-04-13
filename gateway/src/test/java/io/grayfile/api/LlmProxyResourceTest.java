@@ -149,6 +149,44 @@ class LlmProxyResourceTest {
         assertEquals(20, billingWindowRepository.listAll().getFirst().tokenTotal);
     }
 
+
+    @Test
+    void shouldFlagDivergenceBetweenEdgeExtractionAndBackendPayload() throws Exception {
+        when(backendGateway.chatCompletions(anyString(), anyString(), any(), any())).thenReturn(Response.ok(
+                objectMapper.readTree("""
+                        {
+                          "id": "resp-divergence",
+                          "model": "gpt-4o-mini",
+                          "usage": {
+                            "prompt_tokens": 12,
+                            "completion_tokens": 8,
+                            "total_tokens": 20
+                          }
+                        }
+                        """)
+        )
+                .header("x-edge-usage-prompt-tokens", "10")
+                .header("x-edge-usage-completion-tokens", "8")
+                .header("x-edge-usage-total-tokens", "18")
+                .build());
+
+        given()
+                .contentType("application/json")
+                .header("x-customer-id", "customer-1")
+                .header("x-api-key-id", "key-1")
+                .header("x-request-id", "req-divergence")
+                .body(Map.of("model", "gpt-4o-mini"))
+                .when()
+                .post("/llm/v1/chat/completions")
+                .then()
+                .statusCode(200)
+                .header("x-grayfile-usage-divergence", equalTo("edge_backend_mismatch"))
+                .header("x-grayfile-usage-capture", equalTo("edge_backend_divergence"));
+
+        assertEquals(0L, usageEventRepository.count());
+        assertEquals(0L, billingWindowRepository.count());
+    }
+
     @Test
     void shouldFallbackToSecondBackendWhenFirstReturnsFiveHundred() throws Exception {
         userTransaction.begin();

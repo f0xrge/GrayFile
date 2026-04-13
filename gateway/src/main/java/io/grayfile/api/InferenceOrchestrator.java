@@ -88,14 +88,32 @@ public class InferenceOrchestrator {
                     observeAndLog(startedAt, requestId, customerId, apiKeyId, modelId, backendResponse);
                     continue;
                 }
-                usageCaptureService.captureUsage(customerId, apiKeyId, requestId, payload);
+                UsageCaptureService.EdgeUsageExtraction edgeUsageExtraction = UsageCaptureService.EdgeUsageExtraction.fromHeaders(
+                        backendResponse.getHeaderString("x-edge-usage-prompt-tokens"),
+                        backendResponse.getHeaderString("x-edge-usage-completion-tokens"),
+                        backendResponse.getHeaderString("x-edge-usage-total-tokens")
+                );
+                UsageCaptureService.UsageCaptureDecision usageDecision = usageCaptureService.captureUsage(
+                        customerId,
+                        apiKeyId,
+                        requestId,
+                        payload,
+                        edgeUsageExtraction
+                );
                 observeAndLog(startedAt, requestId, customerId, apiKeyId, modelId, backendResponse);
-                return Response.status(backendResponse.getStatus())
+
+                Response.ResponseBuilder responseBuilder = Response.status(backendResponse.getStatus())
                         .entity(payload)
                         .header("x-grayfile-gateway", "grayfile-gateway")
                         .header("x-request-id", requestId)
                         .header("x-backend-id", route.backendId())
-                        .build();
+                        .header("x-grayfile-usage-capture", usageDecision.reason());
+
+                if (usageDecision.divergenceDetected()) {
+                    responseBuilder.header("x-grayfile-usage-divergence", "edge_backend_mismatch");
+                }
+
+                return responseBuilder.build();
             } catch (Exception exception) {
                 lastError = exception;
             }
