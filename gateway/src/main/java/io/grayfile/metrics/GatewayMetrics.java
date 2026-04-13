@@ -12,6 +12,7 @@ public class GatewayMetrics implements GatewayMetricsRecorder {
 
     private static final String EDGE_ERRORS_METRIC = "grayfile_edge_errors_total";
     private static final String APPLICATION_ERRORS_METRIC = "grayfile_application_errors_total";
+    private static final String USAGE_EXTRACTION_ERRORS_METRIC = "grayfile_usage_extraction_errors_total";
     private static final String REQUEST_LATENCY_METRIC = "grayfile_gateway_request_latency";
 
     private final MeterRegistry meterRegistry;
@@ -44,6 +45,16 @@ public class GatewayMetrics implements GatewayMetricsRecorder {
     @Override
     public void recordApplicationError(String type, String model, String backendStatus) {
         counter(APPLICATION_ERRORS_METRIC, type, model, backendStatus).increment();
+    }
+
+    @Override
+    public void recordUsageExtractionError(String reason, String model) {
+        Counter.builder(USAGE_EXTRACTION_ERRORS_METRIC)
+                .description("Usage extraction errors grouped by reason")
+                .tag("reason", reason)
+                .tag("model", model)
+                .register(meterRegistry)
+                .increment();
     }
 
     private Counter counter(String metricName, String type, String model, String backendStatus) {

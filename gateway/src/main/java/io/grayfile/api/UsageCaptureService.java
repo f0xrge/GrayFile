@@ -2,7 +2,9 @@ package io.grayfile.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.grayfile.billing.BillingUsageHandler;
+import io.grayfile.service.AuditLogService;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.time.Instant;
@@ -14,9 +16,18 @@ public class UsageCaptureService {
     private static final Logger LOG = Logger.getLogger(UsageCaptureService.class);
 
     private final BillingUsageHandler billingUsageHandler;
+    private final AuditLogService auditLogService;
+    private final String extractorVersion;
+    private final String usageSigningKey;
 
-    public UsageCaptureService(BillingUsageHandler billingUsageHandler) {
+    public UsageCaptureService(BillingUsageHandler billingUsageHandler,
+                               AuditLogService auditLogService,
+                               @ConfigProperty(name = "grayfile.usage.extractor.version", defaultValue = "gateway-backend-payload-v1") String extractorVersion,
+                               @ConfigProperty(name = "grayfile.usage.signing-key", defaultValue = "grayfile-dev-usage-signing-key") String usageSigningKey) {
         this.billingUsageHandler = billingUsageHandler;
+        this.auditLogService = auditLogService;
+        this.extractorVersion = extractorVersion;
+        this.usageSigningKey = usageSigningKey;
     }
 
     public UsageCaptureDecision captureUsage(String customerId,
@@ -26,6 +37,7 @@ public class UsageCaptureService {
                                              EdgeUsageExtraction edgeUsageExtraction) {
         JsonNode usageNode = payload.path("usage");
         if (usageNode.isMissingNode() || usageNode.isNull()) {
+            logExtractionAudit("missing_usage", requestId, payload.path("model").asText("unknown-model"));
             return UsageCaptureDecision.skippedReason("missing_usage");
         }
 
@@ -34,8 +46,19 @@ public class UsageCaptureService {
         Integer totalTokens = readNonNegativeInt(usageNode, "total_tokens");
         if (promptTokens == null || completionTokens == null || totalTokens == null) {
             LOG.warnf("Skipping usage capture for request_id=%s due to invalid usage payload", requestId);
+            logExtractionAudit("invalid_usage_payload", requestId, payload.path("model").asText("unknown-model"));
             return UsageCaptureDecision.skippedReason("invalid_usage_payload");
         }
+
+        String model = payload.path("model").asText("unknown-model");
+        UsageExtractionContract contract = UsageExtractionContract.of(
+                requestId,
+                model,
+                promptTokens,
+                completionTokens,
+                totalTokens,
+                extractorVersion
+        );
 
         if (edgeUsageExtraction.present() && edgeUsageExtraction.hasDivergence(promptTokens, completionTokens, totalTokens)) {
             LOG.warnf(
@@ -48,10 +71,11 @@ public class UsageCaptureService {
                     completionTokens,
                     totalTokens
             );
+            logExtractionAudit("edge_backend_divergence", requestId, model);
             return UsageCaptureDecision.divergentReason("edge_backend_divergence");
         }
 
-        String model = payload.path("model").asText("unknown-model");
+        String signature = contract.signature(usageSigningKey);
         billingUsageHandler.handleUsage(
                 customerId,
                 apiKeyId,
@@ -60,9 +84,12 @@ public class UsageCaptureService {
                 promptTokens,
                 completionTokens,
                 totalTokens,
+                contract.contractVersion(),
+                extractorVersion,
+                signature,
                 Instant.now()
         );
-        return UsageCaptureDecision.capturedReason();
+        return UsageCaptureDecision.capturedReason(contract.contractVersion(), extractorVersion);
     }
 
     private Integer readNonNegativeInt(JsonNode node, String fieldName) {
@@ -73,19 +100,38 @@ public class UsageCaptureService {
         return field.asInt();
     }
 
-    public record UsageCaptureDecision(boolean captured, boolean divergenceDetected, String reason) {
+    public record UsageCaptureDecision(boolean captured,
+                                       boolean divergenceDetected,
+                                       String reason,
+                                       String contractVersion,
+                                       String extractorVersion) {
 
-        static UsageCaptureDecision capturedReason() {
-            return new UsageCaptureDecision(true, false, "captured");
+        static UsageCaptureDecision capturedReason(String contractVersion, String extractorVersion) {
+            return new UsageCaptureDecision(true, false, "captured", contractVersion, extractorVersion);
         }
 
         static UsageCaptureDecision skippedReason(String reason) {
-            return new UsageCaptureDecision(false, false, reason);
+            return new UsageCaptureDecision(false, false, reason, null, null);
         }
 
         static UsageCaptureDecision divergentReason(String reason) {
-            return new UsageCaptureDecision(false, true, reason);
+            return new UsageCaptureDecision(false, true, reason, null, null);
         }
+    }
+
+    private void logExtractionAudit(String reason, String requestId, String model) {
+        auditLogService.logEvent(
+                "USAGE_EXTRACTION_AUDIT",
+                "usage-capture-service",
+                "usage_extraction",
+                requestId,
+                auditLogService.payloadOf(
+                        "reason", reason,
+                        "request_id", requestId,
+                        "model", model
+                ),
+                Instant.now()
+        );
     }
 
     public record EdgeUsageExtraction(boolean present, int promptTokens, int completionTokens, int totalTokens) {

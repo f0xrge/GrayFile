@@ -100,6 +100,9 @@ public class InferenceOrchestrator {
                         payload,
                         edgeUsageExtraction
                 );
+                if (!usageDecision.captured()) {
+                    gatewayMetrics.recordUsageExtractionError(usageDecision.reason(), modelId);
+                }
                 observeAndLog(startedAt, requestId, customerId, apiKeyId, modelId, backendResponse);
 
                 Response.ResponseBuilder responseBuilder = Response.status(backendResponse.getStatus())
@@ -109,6 +112,12 @@ public class InferenceOrchestrator {
                         .header("x-backend-id", route.backendId())
                         .header("x-grayfile-usage-capture", usageDecision.reason());
 
+                if (usageDecision.contractVersion() != null) {
+                    responseBuilder.header("x-grayfile-usage-contract-version", usageDecision.contractVersion());
+                }
+                if (usageDecision.extractorVersion() != null) {
+                    responseBuilder.header("x-grayfile-usage-extractor-version", usageDecision.extractorVersion());
+                }
                 if (usageDecision.divergenceDetected()) {
                     responseBuilder.header("x-grayfile-usage-divergence", "edge_backend_mismatch");
                 }

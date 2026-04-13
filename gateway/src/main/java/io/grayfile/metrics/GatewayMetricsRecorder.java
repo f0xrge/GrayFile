@@ -11,4 +11,6 @@ public interface GatewayMetricsRecorder {
     void recordEdgeError(String type, String model, String backendStatus);
 
     void recordApplicationError(String type, String model, String backendStatus);
+
+    void recordUsageExtractionError(String reason, String model);
 }

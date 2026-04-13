@@ -50,4 +50,18 @@ class GatewayMetricsTest {
         assertEquals(1.0, app504.count());
         assertEquals(1.0, timeout.count());
     }
+
+    @Test
+    void shouldRecordUsageExtractionErrorCounter() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        GatewayMetrics metrics = new GatewayMetrics(registry);
+
+        metrics.recordUsageExtractionError("missing_usage", "gpt-4o-mini");
+
+        Counter extraction = registry.find("grayfile_usage_extraction_errors_total")
+                .tags("reason", "missing_usage", "model", "gpt-4o-mini")
+                .counter();
+
+        assertEquals(1.0, extraction.count());
+    }
 }

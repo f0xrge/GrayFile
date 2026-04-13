@@ -44,6 +44,9 @@ public class BillingService implements BillingUsageHandler {
                             int promptTokens,
                             int completionTokens,
                             int totalTokens,
+                            String contractVersion,
+                            String extractorVersion,
+                            String usageSignature,
                             Instant eventTime) {
         Optional<UsageEventEntity> existing = usageEventRepository.findByBusinessKey(requestId, customerId, apiKeyId, model);
         if (existing.isPresent()) {
@@ -60,6 +63,9 @@ public class BillingService implements BillingUsageHandler {
         usageEvent.promptTokens = promptTokens;
         usageEvent.completionTokens = completionTokens;
         usageEvent.totalTokens = totalTokens;
+        usageEvent.contractVersion = contractVersion;
+        usageEvent.extractorVersion = extractorVersion;
+        usageEvent.usageSignature = usageSignature;
         usageEvent.eventTime = eventTime;
         try {
             usageEventRepository.persistAndFlush(usageEvent);
@@ -85,7 +91,10 @@ public class BillingService implements BillingUsageHandler {
                         "model", model,
                         "prompt_tokens", promptTokens,
                         "completion_tokens", completionTokens,
-                        "total_tokens", totalTokens
+                        "total_tokens", totalTokens,
+                        "contract_version", contractVersion,
+                        "extractor_version", extractorVersion,
+                        "usage_signature", usageSignature
                 ),
                 eventTime
         );

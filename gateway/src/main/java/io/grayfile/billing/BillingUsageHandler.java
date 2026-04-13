@@ -11,5 +11,8 @@ public interface BillingUsageHandler {
                      int promptTokens,
                      int completionTokens,
                      int totalTokens,
+                     String contractVersion,
+                     String extractorVersion,
+                     String usageSignature,
                      Instant eventTime);
 }
