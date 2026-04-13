@@ -35,6 +35,9 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class BillingServiceTest {
+    private static final String CONTRACT_VERSION = "usage_extraction.v1";
+    private static final String EXTRACTOR_VERSION = "gateway-backend-payload-v1";
+    private static final String USAGE_SIGNATURE = "signature";
 
     @Mock
     UsageEventRepository usageEventRepository;
@@ -61,7 +64,7 @@ class BillingServiceTest {
         when(usageEventRepository.findByBusinessKey("req-0", "customer-1", "key-1", "gpt-4o-mini"))
                 .thenReturn(Optional.empty());
 
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-0", 0, 0, 0, eventTime);
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-0", 0, 0, 0, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
 
         verify(usageEventRepository).persistAndFlush(any(UsageEventEntity.class));
         verify(billingMetrics).recordUsageEvent(0);
@@ -90,7 +93,7 @@ class BillingServiceTest {
             return null;
         }).when(billingWindowRepository).persist(any(BillingWindowEntity.class));
 
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-overflow", 1100, 1023, 2123, eventTime);
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-overflow", 1100, 1023, 2123, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
 
         assertEquals(3, persisted.size());
         assertEquals(1000, persisted.get(0).tokenTotal);
@@ -149,6 +152,9 @@ class BillingServiceTest {
                 10,
                 5,
                 15,
+                CONTRACT_VERSION,
+                EXTRACTOR_VERSION,
+                USAGE_SIGNATURE,
                 Instant.parse("2026-04-09T12:00:00Z")
         );
 
@@ -175,6 +181,9 @@ class BillingServiceTest {
                 10,
                 5,
                 15,
+                CONTRACT_VERSION,
+                EXTRACTOR_VERSION,
+                USAGE_SIGNATURE,
                 Instant.parse("2026-04-09T13:00:00Z")
         );
 

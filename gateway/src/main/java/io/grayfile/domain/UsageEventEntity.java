@@ -35,4 +35,13 @@ public class UsageEventEntity extends PanacheEntityBase {
 
     @Column(name = "total_tokens", nullable = false)
     public int totalTokens;
+
+    @Column(name = "contract_version", nullable = false)
+    public String contractVersion;
+
+    @Column(name = "extractor_version", nullable = false)
+    public String extractorVersion;
+
+    @Column(name = "usage_signature", nullable = false)
+    public String usageSignature;
 }

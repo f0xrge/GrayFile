@@ -28,6 +28,7 @@ import java.util.Map;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -142,7 +143,9 @@ class LlmProxyResourceTest {
                 .body("id", equalTo("resp-1"))
                 .body("usage.total_tokens", equalTo(20))
                 .header("x-request-id", equalTo("req-1"))
-                .header("x-backend-id", equalTo("backend-a"));
+                .header("x-backend-id", equalTo("backend-a"))
+                .header("x-grayfile-usage-contract-version", equalTo("usage_extraction.v1"))
+                .header("x-grayfile-usage-extractor-version", equalTo("gateway-backend-payload-v1"));
 
         assertEquals(1L, usageEventRepository.count());
         assertEquals(1L, billingWindowRepository.count());
@@ -193,9 +196,11 @@ class LlmProxyResourceTest {
         persistRoute("gpt-4o-mini", "backend-b", "http://backend-b:18080", 1, true);
         userTransaction.commit();
 
-        when(backendGateway.chatCompletions(eq("http://backend-a:18080"), eq("req-2"), eq(null), any()))
-                .thenReturn(Response.serverError().entity(Map.of("error", "boom")).build());
-        when(backendGateway.chatCompletions(eq("http://backend-b:18080"), eq("req-2"), eq(null), any()))
+        when(backendGateway.chatCompletions(eq("http://backend-a:18080"), eq("req-2"), any(), any()))
+                .thenReturn(Response.serverError().entity(objectMapper.readTree("""
+                        {"error":"boom"}
+                        """)).build());
+        when(backendGateway.chatCompletions(eq("http://backend-b:18080"), eq("req-2"), any(), any()))
                 .thenReturn(Response.ok(objectMapper.readTree("""
                         {"id":"resp-2","model":"gpt-4o-mini","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
                         """)).build());
@@ -211,6 +216,33 @@ class LlmProxyResourceTest {
                 .then()
                 .statusCode(200)
                 .header("x-backend-id", equalTo("backend-b"));
+    }
+
+    @Test
+    void shouldWriteUsageExtractionAuditWhenUsageFieldsAreMissing() throws Exception {
+        when(backendGateway.chatCompletions(anyString(), anyString(), any(), any())).thenReturn(Response.ok(
+                objectMapper.readTree("""
+                        {
+                          "id": "resp-no-usage",
+                          "model": "gpt-4o-mini"
+                        }
+                        """)
+        ).build());
+
+        given()
+                .contentType("application/json")
+                .header("x-customer-id", "customer-1")
+                .header("x-api-key-id", "key-1")
+                .header("x-request-id", "req-no-usage")
+                .body(Map.of("model", "gpt-4o-mini"))
+                .when()
+                .post("/llm/v1/chat/completions")
+                .then()
+                .statusCode(200)
+                .header("x-grayfile-usage-capture", equalTo("missing_usage"));
+
+        assertEquals(0L, usageEventRepository.count());
+        assertTrue(auditLogRepository.listFiltered("USAGE_EXTRACTION_AUDIT", null, null, "usage_extraction", "req-no-usage", 10).size() >= 1);
     }
 
     @Test

@@ -22,6 +22,23 @@ A usage event is produced from a completed inference response and contains at le
 - total tokens
 - request ID
 
+### Usage extraction contract (canonical)
+GrayFile normalizes extracted usage into the canonical contract `usage_extraction.v1`:
+- `request_id`
+- `model`
+- `prompt_tokens`
+- `completion_tokens`
+- `total_tokens`
+- `extractor_version`
+
+For integrity, the gateway computes an HMAC-SHA256 signature over canonical fields and stores:
+- `contract_version`
+- `extractor_version`
+- `usage_signature`
+
+If required fields are missing/invalid or edge-vs-backend usage diverges, GrayFile records
+`USAGE_EXTRACTION_AUDIT` events for dedicated extraction auditability.
+
 ### Billing window
 A billing window is a bounded period of metered usage for a given billing scope.
 
