@@ -256,46 +256,20 @@ static_resources:
                               per_try_timeout: 2s
                               retriable_status_codes: [502, 503, 504]
                 http_filters:
-                  - name: envoy.filters.http.lua
+                  - name: envoy.filters.http.ext_proc
                     typed_config:
-                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
-                      inline_code: |
-                        local cjson = require("cjson.safe")
-
-                        function envoy_on_response(response_handle)
-                          local body = response_handle:body()
-                          if body == nil then
-                            response_handle:headers():replace("x-edge-usage-extraction", "missing_body")
-                            return
-                          end
-
-                          local body_text = body:getBytes(0, body:length())
-                          local payload = cjson.decode(body_text)
-                          if payload == nil or type(payload) ~= "table" then
-                            response_handle:headers():replace("x-edge-usage-extraction", "invalid_json")
-                            return
-                          end
-
-                          local usage = payload["usage"]
-                          if usage == nil or type(usage) ~= "table" then
-                            response_handle:headers():replace("x-edge-usage-extraction", "usage_missing")
-                            return
-                          end
-
-                          local prompt = usage["prompt_tokens"]
-                          local completion = usage["completion_tokens"]
-                          local total = usage["total_tokens"]
-
-                          if type(prompt) ~= "number" or type(completion) ~= "number" or type(total) ~= "number" then
-                            response_handle:headers():replace("x-edge-usage-extraction", "usage_invalid")
-                            return
-                          end
-
-                          response_handle:headers():replace("x-edge-usage-extraction", "ok")
-                          response_handle:headers():replace("x-edge-usage-prompt-tokens", tostring(prompt))
-                          response_handle:headers():replace("x-edge-usage-completion-tokens", tostring(completion))
-                          response_handle:headers():replace("x-edge-usage-total-tokens", tostring(total))
-                        end
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: ext_proc_service
+                      processing_mode:
+                        request_header_mode: SKIP
+                        request_body_mode: SKIP
+                        response_header_mode: SKIP
+                        response_body_mode: BUFFERED
+                        request_trailer_mode: SKIP
+                        response_trailer_mode: SKIP
+                      failure_mode_allow: true
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -364,6 +338,21 @@ static_resources:
         interval: 10s
         base_ejection_time: 30s
         max_ejection_percent: 50
+
+    - name: ext_proc_service
+      connect_timeout: 1s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      http2_protocol_options: {}
+      load_assignment:
+        cluster_name: ext_proc_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: ext-proc
+                      port_value: 18080
 
 admin:
   access_log_path: /tmp/envoy-admin.log

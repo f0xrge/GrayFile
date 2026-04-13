@@ -55,6 +55,14 @@ services:
       - ./mock-backend:/home/wiremock
 
 
+  ext-proc:
+    build:
+      context: ./ext_proc
+      dockerfile: Dockerfile
+    container_name: grayfile-ext-proc
+    ports:
+      - "18080:18080"
+
   envoy:
     image: envoyproxy/envoy:v1.33.2
     container_name: grayfile-envoy
@@ -68,6 +76,8 @@ services:
       - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
     depends_on:
       mock-backend:
+        condition: service_started
+      ext-proc:
         condition: service_started
   prometheus:
     image: prom/prometheus:v3.2.1
