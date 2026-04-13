@@ -68,6 +68,7 @@ Services:
 - Management UI: `http://localhost:4200`
 - Envoy public listener (`/llm/v1/*`): `http://localhost:11000` (rate limits + overload protection)
 - Envoy restricted listener (`/management/v1/*`, internal/VPN intended): `http://localhost:11001`
+- ext_proc service (usage extraction for egress responses): `localhost:18080`
 - PostgreSQL: `localhost:5432`
 - Mock backend: `http://localhost:8000`
 - Prometheus: `http://localhost:9090`
@@ -131,6 +132,15 @@ Rationale:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/test-containers.ps1
+```
+
+## ext_proc benchmark rapide (p95/p99)
+
+```bash
+python scripts/measure_ext_proc_overhead.py \
+  --baseline-url http://localhost:8080/llm/v1/chat/completions \
+  --ext-proc-url http://localhost:11000/llm/v1/chat/completions \
+  --iterations 500
 ```
 
 ## Billing behavior summary
