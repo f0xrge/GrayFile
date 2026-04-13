@@ -256,6 +256,46 @@ static_resources:
                               per_try_timeout: 2s
                               retriable_status_codes: [502, 503, 504]
                 http_filters:
+                  - name: envoy.filters.http.lua
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                      inline_code: |
+                        local cjson = require("cjson.safe")
+
+                        function envoy_on_response(response_handle)
+                          local body = response_handle:body()
+                          if body == nil then
+                            response_handle:headers():replace("x-edge-usage-extraction", "missing_body")
+                            return
+                          end
+
+                          local body_text = body:getBytes(0, body:length())
+                          local payload = cjson.decode(body_text)
+                          if payload == nil or type(payload) ~= "table" then
+                            response_handle:headers():replace("x-edge-usage-extraction", "invalid_json")
+                            return
+                          end
+
+                          local usage = payload["usage"]
+                          if usage == nil or type(usage) ~= "table" then
+                            response_handle:headers():replace("x-edge-usage-extraction", "usage_missing")
+                            return
+                          end
+
+                          local prompt = usage["prompt_tokens"]
+                          local completion = usage["completion_tokens"]
+                          local total = usage["total_tokens"]
+
+                          if type(prompt) ~= "number" or type(completion) ~= "number" or type(total) ~= "number" then
+                            response_handle:headers():replace("x-edge-usage-extraction", "usage_invalid")
+                            return
+                          end
+
+                          response_handle:headers():replace("x-edge-usage-extraction", "ok")
+                          response_handle:headers():replace("x-edge-usage-prompt-tokens", tostring(prompt))
+                          response_handle:headers():replace("x-edge-usage-completion-tokens", tostring(completion))
+                          response_handle:headers():replace("x-edge-usage-total-tokens", tostring(total))
+                        end
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
