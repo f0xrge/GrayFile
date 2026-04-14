@@ -6,9 +6,11 @@ import io.grayfile.domain.ApiKeyEntity;
 import io.grayfile.domain.AuditLogEntity;
 import io.grayfile.domain.BillingWindowEntity;
 import io.grayfile.domain.CustomerEntity;
+import io.grayfile.domain.CustomerModelPricingEntity;
 import io.grayfile.domain.LlmModelEntity;
 import io.grayfile.domain.ModelRouteEntity;
 import io.grayfile.service.ManagementService;
+import io.grayfile.service.UsageAnalyticsService;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -23,6 +25,7 @@ import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.List;
@@ -133,6 +136,8 @@ public class ManagementResource {
                 request.displayName(),
                 request.provider(),
                 request.active(),
+                request.defaultTimePrice(),
+                request.defaultTokenPrice(),
                 auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
         );
         return Response.status(Response.Status.CREATED).entity(ModelResponse.from(entity)).build();
@@ -153,6 +158,8 @@ public class ManagementResource {
                 request.displayName(),
                 request.provider(),
                 request.active(),
+                request.defaultTimePrice(),
+                request.defaultTokenPrice(),
                 auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
         ));
     }
@@ -253,6 +260,51 @@ public class ManagementResource {
         managementService.deleteModelRoute(
                 modelId,
                 backendId,
+                auditContext(actorId, sourceIp, requestId, reason, changeType, secondApproverId, bulkChangeSize)
+        );
+        return Response.noContent().build();
+    }
+
+    @GET
+    @Path("/models/{modelId}/customer-pricing")
+    public List<CustomerModelPricingResponse> listCustomerPricing(@PathParam("modelId") String modelId) {
+        return managementService.listCustomerPricingForModel(modelId).stream().map(CustomerModelPricingResponse::from).toList();
+    }
+
+    @PUT
+    @Path("/models/{modelId}/customer-pricing/{customerId}")
+    public CustomerModelPricingResponse upsertCustomerPricing(@PathParam("modelId") String modelId,
+                                                              @PathParam("customerId") String customerId,
+                                                              CustomerModelPricingUpsertRequest request,
+                                                              @HeaderParam("x-actor-id") String actorId,
+                                                              @HeaderParam("x-source-ip") String sourceIp,
+                                                              @HeaderParam("x-request-id") String requestId,
+                                                              @HeaderParam("x-change-reason") String reason,
+                                                              @HeaderParam("x-second-approver-id") String secondApproverId,
+                                                              @HeaderParam("x-bulk-change-size") Integer bulkChangeSize) {
+        return CustomerModelPricingResponse.from(managementService.upsertCustomerPricing(
+                modelId,
+                customerId,
+                request.timePrice(),
+                request.tokenPrice(),
+                auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
+        ));
+    }
+
+    @DELETE
+    @Path("/models/{modelId}/customer-pricing/{customerId}")
+    public Response deleteCustomerPricing(@PathParam("modelId") String modelId,
+                                          @PathParam("customerId") String customerId,
+                                          @HeaderParam("x-actor-id") String actorId,
+                                          @HeaderParam("x-source-ip") String sourceIp,
+                                          @HeaderParam("x-request-id") String requestId,
+                                          @HeaderParam("x-change-reason") String reason,
+                                          @HeaderParam("x-second-approver-id") String secondApproverId,
+                                          @HeaderParam("x-bulk-change-size") Integer bulkChangeSize,
+                                          @QueryParam("changeType") String changeType) {
+        managementService.deleteCustomerPricing(
+                modelId,
+                customerId,
                 auditContext(actorId, sourceIp, requestId, reason, changeType, secondApproverId, bulkChangeSize)
         );
         return Response.noContent().build();
@@ -362,16 +414,44 @@ public class ManagementResource {
                 .toList();
     }
 
+    @GET
+    @Path("/usage-analytics")
+    public UsageAnalyticsService.UsageAnalyticsResponse getUsageAnalytics(@QueryParam("customerId") String customerId,
+                                                                          @QueryParam("modelId") String modelId,
+                                                                          @QueryParam("startDate") String startDate,
+                                                                          @QueryParam("endDate") String endDate,
+                                                                          @QueryParam("limit") Integer limit) {
+        int resolvedLimit = limit == null ? 20 : limit;
+        return managementService.getUsageAnalytics(
+                customerId,
+                modelId,
+                parseInstant(startDate, "startDate"),
+                parseInstant(endDate, "endDate"),
+                resolvedLimit
+        );
+    }
+
     public record CustomerUpsertRequest(String id, String name, Boolean active, String changeType) {
     }
 
     public record CustomerUpdateRequest(String name, Boolean active, String changeType) {
     }
 
-    public record ModelUpsertRequest(String id, String displayName, String provider, Boolean active, String changeType) {
+    public record ModelUpsertRequest(String id,
+                                     String displayName,
+                                     String provider,
+                                     Boolean active,
+                                     BigDecimal defaultTimePrice,
+                                     BigDecimal defaultTokenPrice,
+                                     String changeType) {
     }
 
-    public record ModelUpdateRequest(String displayName, String provider, Boolean active, String changeType) {
+    public record ModelUpdateRequest(String displayName,
+                                     String provider,
+                                     Boolean active,
+                                     BigDecimal defaultTimePrice,
+                                     BigDecimal defaultTokenPrice,
+                                     String changeType) {
     }
 
     public record ApiKeyCreateRequest(String id, String customerId, String name, Boolean active, String changeType) {
@@ -389,15 +469,30 @@ public class ManagementResource {
     public record ModelRouteWeightRequest(int weight, String changeType) {
     }
 
+    public record CustomerModelPricingUpsertRequest(BigDecimal timePrice, BigDecimal tokenPrice, String changeType) {
+    }
+
     public record CustomerResponse(String id, String name, boolean active) {
         static CustomerResponse from(CustomerEntity entity) {
             return new CustomerResponse(entity.id, entity.name, entity.active);
         }
     }
 
-    public record ModelResponse(String id, String displayName, String provider, boolean active) {
+    public record ModelResponse(String id,
+                                String displayName,
+                                String provider,
+                                boolean active,
+                                BigDecimal defaultTimePrice,
+                                BigDecimal defaultTokenPrice) {
         static ModelResponse from(LlmModelEntity entity) {
-            return new ModelResponse(entity.id, entity.displayName, entity.provider, entity.active);
+            return new ModelResponse(
+                    entity.id,
+                    entity.displayName,
+                    entity.provider,
+                    entity.active,
+                    entity.defaultTimePrice,
+                    entity.defaultTokenPrice
+            );
         }
     }
 
@@ -416,6 +511,16 @@ public class ManagementResource {
                                      Instant updatedAt) {
         static ModelRouteResponse from(ModelRouteEntity entity) {
             return new ModelRouteResponse(entity.modelId, entity.backendId, entity.baseUrl, entity.weight, entity.active, entity.version, entity.updatedAt);
+        }
+    }
+
+    public record CustomerModelPricingResponse(String customerId,
+                                               String modelId,
+                                               BigDecimal timePrice,
+                                               BigDecimal tokenPrice,
+                                               Instant updatedAt) {
+        static CustomerModelPricingResponse from(CustomerModelPricingEntity entity) {
+            return new CustomerModelPricingResponse(entity.customerId, entity.modelId, entity.timePrice, entity.tokenPrice, entity.updatedAt);
         }
     }
 

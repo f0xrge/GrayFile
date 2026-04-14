@@ -5,8 +5,9 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
-import { LlmModel, ModelRoute } from '../../core/models/management.models';
+import { Customer, CustomerModelPricing, LlmModel, ModelRoute } from '../../core/models/management.models';
 import { ManagementApiService } from '../../core/services/management-api.service';
 
 @Component({
@@ -18,6 +19,7 @@ import { ManagementApiService } from '../../core/services/management-api.service
     MatCardModule,
     MatFormFieldModule,
     MatInputModule,
+    MatSelectModule,
     MatSlideToggleModule
   ],
   templateUrl: './models-page.component.html',
@@ -30,7 +32,9 @@ export class ModelsPageComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly models = signal<LlmModel[]>([]);
+  protected readonly customers = signal<Customer[]>([]);
   protected readonly routes = signal<ModelRoute[]>([]);
+  protected readonly customerPricing = signal<CustomerModelPricing[]>([]);
   protected readonly selectedModelId = signal<string | null>(null);
   protected readonly selectedRouteId = signal<string | null>(null);
   protected readonly selectedModel = computed(
@@ -47,25 +51,36 @@ export class ModelsPageComponent {
     id: ['', Validators.required],
     displayName: ['', Validators.required],
     provider: ['', Validators.required],
+    defaultTimePrice: [0, [Validators.required, Validators.min(0)]],
+    defaultTokenPrice: [0, [Validators.required, Validators.min(0)]],
     active: [true]
   });
 
   protected readonly routeForm = this.fb.nonNullable.group({
     backendId: ['', Validators.required],
     baseUrl: ['', Validators.required],
-    weight: [100, [Validators.required, Validators.min(0)]],
+    weight: [100, [Validators.required, Validators.min(1)]],
     active: [false]
+  });
+
+  protected readonly pricingForm = this.fb.nonNullable.group({
+    customerId: ['', Validators.required],
+    timePrice: [0, [Validators.required, Validators.min(0)]],
+    tokenPrice: [0, [Validators.required, Validators.min(0)]]
   });
 
   constructor() {
     this.loadModels();
+    this.loadCustomers();
 
     effect(() => {
       const modelId = this.selectedModelId();
       if (modelId) {
         this.refreshRoutes(modelId);
+        this.refreshPricing(modelId);
       } else {
         this.routes.set([]);
+        this.customerPricing.set([]);
       }
     });
   }
@@ -76,6 +91,8 @@ export class ModelsPageComponent {
       id: model.id,
       displayName: model.displayName,
       provider: model.provider,
+      defaultTimePrice: model.defaultTimePrice,
+      defaultTokenPrice: model.defaultTokenPrice,
       active: model.active
     });
     this.modelForm.controls.id.disable();
@@ -84,9 +101,10 @@ export class ModelsPageComponent {
 
   protected resetModelForm(): void {
     this.selectedModelId.set(null);
-    this.modelForm.reset({ id: '', displayName: '', provider: '', active: true });
+    this.modelForm.reset({ id: '', displayName: '', provider: '', defaultTimePrice: 0, defaultTokenPrice: 0, active: true });
     this.modelForm.controls.id.enable();
     this.resetRouteForm();
+    this.resetPricingForm();
   }
 
   protected saveModel(): void {
@@ -106,6 +124,8 @@ export class ModelsPageComponent {
             displayName: raw.displayName,
             provider: raw.provider,
             active: raw.active,
+            defaultTimePrice: raw.defaultTimePrice,
+            defaultTokenPrice: raw.defaultTokenPrice,
             changeType: 'update'
           },
           audit
@@ -116,6 +136,8 @@ export class ModelsPageComponent {
             displayName: raw.displayName,
             provider: raw.provider,
             active: raw.active,
+            defaultTimePrice: raw.defaultTimePrice,
+            defaultTokenPrice: raw.defaultTokenPrice,
             changeType: 'create'
           },
           audit
@@ -159,6 +181,57 @@ export class ModelsPageComponent {
     this.routeForm.controls.backendId.enable();
   }
 
+  protected savePricing(): void {
+    const model = this.selectedModel();
+    if (!model) {
+      return;
+    }
+    if (this.pricingForm.invalid) {
+      this.pricingForm.markAllAsTouched();
+      return;
+    }
+
+    const raw = this.pricingForm.getRawValue();
+    this.api
+      .upsertCustomerPricing(
+        model.id,
+        raw.customerId,
+        {
+          timePrice: raw.timePrice,
+          tokenPrice: raw.tokenPrice,
+          changeType: 'pricing'
+        },
+        this.auditForm.getRawValue()
+      )
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.refreshPricing(model.id);
+        this.resetPricingForm();
+      });
+  }
+
+  protected editPricing(pricing: CustomerModelPricing): void {
+    this.pricingForm.setValue({
+      customerId: pricing.customerId,
+      timePrice: pricing.timePrice,
+      tokenPrice: pricing.tokenPrice
+    });
+  }
+
+  protected deletePricing(pricing: CustomerModelPricing): void {
+    this.api
+      .deleteCustomerPricing(pricing.modelId, pricing.customerId, this.auditForm.getRawValue())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.refreshPricing(pricing.modelId);
+        this.resetPricingForm();
+      });
+  }
+
+  protected resetPricingForm(): void {
+    this.pricingForm.reset({ customerId: '', timePrice: 0, tokenPrice: 0 });
+  }
+
   protected saveRoute(): void {
     const model = this.selectedModel();
     if (!model) {
@@ -178,7 +251,7 @@ export class ModelsPageComponent {
           baseUrl: raw.baseUrl,
           weight: raw.weight,
           active: raw.active,
-          changeType: 'create'
+          changeType: 'routing'
         },
         this.auditForm.getRawValue()
       )
@@ -231,12 +304,30 @@ export class ModelsPageComponent {
       });
   }
 
+  private loadCustomers(): void {
+    this.api
+      .listCustomers()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((customers) => {
+        this.customers.set(customers);
+      });
+  }
+
   private refreshRoutes(modelId: string): void {
     this.api
       .listRoutes(modelId)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((routes) => {
         this.routes.set(routes);
+      });
+  }
+
+  private refreshPricing(modelId: string): void {
+    this.api
+      .listCustomerPricing(modelId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((pricing) => {
+        this.customerPricing.set(pricing);
       });
   }
 }

@@ -8,6 +8,7 @@ public interface BillingUsageHandler {
                      String apiKeyId,
                      String model,
                      String requestId,
+                     long durationMs,
                      int promptTokens,
                      int completionTokens,
                      int totalTokens,

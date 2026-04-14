@@ -93,10 +93,12 @@ public class InferenceOrchestrator {
                         backendResponse.getHeaderString("x-edge-usage-completion-tokens"),
                         backendResponse.getHeaderString("x-edge-usage-total-tokens")
                 );
+                long usageDurationMs = Duration.between(startedAt, Instant.now()).toMillis();
                 UsageCaptureService.UsageCaptureDecision usageDecision = usageCaptureService.captureUsage(
                         customerId,
                         apiKeyId,
                         requestId,
+                        usageDurationMs,
                         payload,
                         edgeUsageExtraction
                 );

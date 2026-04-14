@@ -29,6 +29,11 @@ public class LlmProxyResource {
                                      @HeaderParam("x-customer-id") String customerId,
                                      @HeaderParam("x-api-key-id") String apiKeyId,
                                      @Context HttpHeaders headers) {
+        if (requestBody == null || !requestBody.isObject()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("request body must be a JSON object")
+                    .build();
+        }
         if (customerId == null || customerId.isBlank() || apiKeyId == null || apiKeyId.isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("x-customer-id and x-api-key-id headers are required")

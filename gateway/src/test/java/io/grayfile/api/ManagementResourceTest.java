@@ -4,11 +4,13 @@ import io.grayfile.domain.ApiKeyEntity;
 import io.grayfile.domain.BillingWindowEntity;
 import io.grayfile.domain.CustomerEntity;
 import io.grayfile.domain.LlmModelEntity;
+import io.grayfile.domain.UsageEventEntity;
 import io.grayfile.persistence.ApiKeyRepository;
 import io.grayfile.persistence.AuditExportStateRepository;
 import io.grayfile.persistence.AuditLogRepository;
 import io.grayfile.persistence.BillingWindowRepository;
 import io.grayfile.persistence.CustomerRepository;
+import io.grayfile.persistence.CustomerModelPricingRepository;
 import io.grayfile.persistence.LlmModelRepository;
 import io.grayfile.persistence.UsageEventRepository;
 import io.quarkus.test.junit.QuarkusTest;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.math.BigDecimal;
 import java.util.Map;
 import java.util.UUID;
 
@@ -46,6 +49,9 @@ class ManagementResourceTest {
     BillingWindowRepository billingWindowRepository;
 
     @Inject
+    CustomerModelPricingRepository customerModelPricingRepository;
+
+    @Inject
     AuditLogRepository auditLogRepository;
 
     @Inject
@@ -61,6 +67,7 @@ class ManagementResourceTest {
         usageEventRepository.deleteAll();
         auditLogRepository.deleteAll();
         auditExportStateRepository.deleteAll();
+        customerModelPricingRepository.deleteAll();
         apiKeyRepository.deleteAll();
         llmModelRepository.deleteAll();
         customerRepository.deleteAll();
@@ -88,7 +95,9 @@ class ManagementResourceTest {
                 .then()
                 .statusCode(201)
                 .body("id", equalTo("gpt-4o-mini"))
-                .body("provider", equalTo("openai"));
+                .body("provider", equalTo("openai"))
+                .body("defaultTimePrice", equalTo(0f))
+                .body("defaultTokenPrice", equalTo(0f));
 
         given()
                 .contentType("application/json")
@@ -350,6 +359,88 @@ class ManagementResourceTest {
     }
 
     @Test
+    void shouldRejectUnsafeModelRouteBaseUrlHost() {
+        given()
+                .contentType("application/json")
+                .body(Map.of("id", "gpt-4o-mini", "displayName", "GPT-4o Mini", "provider", "openai"))
+                .when()
+                .post("/management/v1/models")
+                .then()
+                .statusCode(201);
+
+        given()
+                .contentType("application/json")
+                .body(Map.of("backendId", "backend-a", "baseUrl", "http://127.0.0.1:18080", "weight", 90, "active", true))
+                .when()
+                .post("/management/v1/models/gpt-4o-mini/routes")
+                .then()
+                .statusCode(400)
+                .body(containsString("not allowed"));
+    }
+
+    @Test
+    void shouldExposeCustomerPricingAndUsageAnalytics() throws Exception {
+        seedManagementScope();
+
+        given()
+                .contentType("application/json")
+                .body(Map.of("timePrice", 2.5, "tokenPrice", 1.2, "changeType", "pricing"))
+                .when()
+                .put("/management/v1/models/gpt-4o-mini/customer-pricing/customer-1")
+                .then()
+                .statusCode(200)
+                .body("customerId", equalTo("customer-1"))
+                .body("modelId", equalTo("gpt-4o-mini"));
+
+        persistUsageEvent(
+                "customer-1",
+                "key-1",
+                "gpt-4o-mini",
+                "req-1",
+                12_000,
+                400,
+                100,
+                500,
+                new BigDecimal("30.000000"),
+                new BigDecimal("0.600000"),
+                new BigDecimal("30.600000")
+        );
+        persistUsageEvent(
+                "customer-2",
+                "key-3",
+                "gpt-4o-mini",
+                "req-2",
+                6_000,
+                150,
+                50,
+                200,
+                new BigDecimal("3.000000"),
+                new BigDecimal("0.100000"),
+                new BigDecimal("3.100000")
+        );
+
+        given()
+                .when()
+                .get("/management/v1/models/gpt-4o-mini/customer-pricing")
+                .then()
+                .statusCode(200)
+                .body("$", hasSize(1))
+                .body("[0].customerId", equalTo("customer-1"));
+
+        given()
+                .when()
+                .get("/management/v1/usage-analytics")
+                .then()
+                .statusCode(200)
+                .body("summary.requestCount", equalTo(2))
+                .body("summary.durationMs", equalTo(18000))
+                .body("summary.totalTokens", equalTo(700))
+                .body("byCustomer", hasSize(2))
+                .body("byModel", hasSize(1))
+                .body("byCustomerModel", hasSize(2));
+    }
+
+    @Test
     void shouldRollbackWhenDeletingLastActiveRoute() {
         given()
                 .contentType("application/json")
@@ -403,6 +494,8 @@ class ManagementResourceTest {
         model.displayName = "GPT-4o Mini";
         model.provider = "openai";
         model.active = true;
+        model.defaultTimePrice = BigDecimal.ZERO.setScale(6);
+        model.defaultTokenPrice = BigDecimal.ZERO.setScale(6);
         llmModelRepository.persist(model);
 
         persistApiKey("key-1", "customer-1", "Key One");
@@ -442,6 +535,42 @@ class ManagementResourceTest {
         entity.closureReason = closureReason;
         entity.active = active;
         billingWindowRepository.persist(entity);
+        userTransaction.commit();
+    }
+
+    private void persistUsageEvent(String customerId,
+                                   String apiKeyId,
+                                   String modelId,
+                                   String requestId,
+                                   long durationMs,
+                                   int promptTokens,
+                                   int completionTokens,
+                                   int totalTokens,
+                                   BigDecimal timeCost,
+                                   BigDecimal tokenCost,
+                                   BigDecimal totalCost) throws Exception {
+        userTransaction.begin();
+        UsageEventEntity entity = new UsageEventEntity();
+        entity.id = UUID.randomUUID();
+        entity.customerId = customerId;
+        entity.apiKeyId = apiKeyId;
+        entity.model = modelId;
+        entity.requestId = requestId;
+        entity.eventTime = Instant.parse("2026-04-06T00:00:00Z");
+        entity.durationMs = durationMs;
+        entity.promptTokens = promptTokens;
+        entity.completionTokens = completionTokens;
+        entity.totalTokens = totalTokens;
+        entity.contractVersion = "usage_extraction.v1";
+        entity.extractorVersion = "gateway-backend-payload-v1";
+        entity.usageSignature = "sig";
+        entity.billedTimePrice = BigDecimal.ZERO.setScale(6);
+        entity.billedTokenPrice = BigDecimal.ZERO.setScale(6);
+        entity.timeCost = timeCost;
+        entity.tokenCost = tokenCost;
+        entity.totalCost = totalCost;
+        entity.pricingSource = "customer-model";
+        usageEventRepository.persist(entity);
         userTransaction.commit();
     }
 }

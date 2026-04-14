@@ -75,6 +75,16 @@
                 <input matInput formControlName="displayName">
               </mat-form-field>
 
+              <mat-form-field>
+                <mat-label>Prix temps / seconde (€)</mat-label>
+                <input matInput type="number" step="0.000001" formControlName="defaultTimePrice">
+              </mat-form-field>
+
+              <mat-form-field>
+                <mat-label>Prix token / 1k (€)</mat-label>
+                <input matInput type="number" step="0.000001" formControlName="defaultTokenPrice">
+              </mat-form-field>
+
               <div class="full">
                 <mat-slide-toggle formControlName="active">Modele actif</mat-slide-toggle>
               </div>
@@ -90,6 +100,65 @@
               <button mat-stroked-button color="warn" (click)="deactivateModel()">Desactiver</button>
             }
           </div>
+        </mat-card-content>
+      </mat-card>
+
+      <mat-card class="content-card">
+        <mat-card-content class="stack">
+          <div>
+            <div class="eyebrow">Pricing</div>
+            <h3>Tarification par client sur le modele</h3>
+          </div>
+
+          @if (selectedModel()) {
+            <form class="stack" [formGroup]="pricingForm">
+              <div class="field-grid">
+                <mat-form-field class="full">
+                  <mat-label>Client</mat-label>
+                  <mat-select formControlName="customerId">
+                    @for (customer of customers(); track customer.id) {
+                      <mat-option [value]="customer.id">{{ customer.name }} ({{ customer.id }})</mat-option>
+                    }
+                  </mat-select>
+                </mat-form-field>
+
+                <mat-form-field>
+                  <mat-label>Prix temps / seconde (€)</mat-label>
+                  <input matInput type="number" step="0.000001" formControlName="timePrice">
+                </mat-form-field>
+
+                <mat-form-field>
+                  <mat-label>Prix token / 1k (€)</mat-label>
+                  <input matInput type="number" step="0.000001" formControlName="tokenPrice">
+                </mat-form-field>
+              </div>
+            </form>
+
+            <div class="toolbar-actions">
+              <button mat-flat-button (click)="savePricing()">Sauvegarder le pricing client</button>
+              <button mat-stroked-button (click)="resetPricingForm()">Reinitialiser</button>
+            </div>
+
+            <div class="entity-list">
+              @for (pricing of customerPricing(); track pricing.customerId) {
+                <div class="entity-item route-card">
+                  <div class="route-main">
+                    <div class="eyebrow">{{ pricing.customerId }}</div>
+                    <strong>Temps: {{ pricing.timePrice }} € / s</strong>
+                    <span>Token: {{ pricing.tokenPrice }} € / 1k</span>
+                  </div>
+                  <div class="toolbar-actions">
+                    <button mat-stroked-button (click)="editPricing(pricing)">Editer</button>
+                    <button mat-stroked-button color="warn" (click)="deletePricing(pricing)">Supprimer</button>
+                  </div>
+                </div>
+              } @empty {
+                <div class="empty-state">Aucun pricing client-specifique sur ce modele.</div>
+              }
+            </div>
+          } @else {
+            <div class="empty-state">Selectionnez un modele pour gerer ses pricing client-specifiques.</div>
+          }
         </mat-card-content>
       </mat-card>
 

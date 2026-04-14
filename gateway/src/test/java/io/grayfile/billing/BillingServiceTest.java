@@ -6,6 +6,7 @@ import io.grayfile.metrics.BillingMetrics;
 import io.grayfile.persistence.BillingWindowRepository;
 import io.grayfile.persistence.UsageEventRepository;
 import io.grayfile.service.AuditLogService;
+import io.grayfile.service.PricingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,15 +20,19 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -51,11 +56,18 @@ class BillingServiceTest {
     @Mock
     AuditLogService auditLogService;
 
+    @Mock
+    PricingService pricingService;
+
     BillingService billingService;
 
     @BeforeEach
     void setUp() {
-        billingService = new BillingService(usageEventRepository, billingWindowRepository, billingMetrics, auditLogService);
+        lenient().when(pricingService.resolveEffectivePricing(anyString(), anyString()))
+                .thenReturn(new PricingService.EffectivePricing(BigDecimal.ZERO.setScale(6), BigDecimal.ZERO.setScale(6), "model-default"));
+        lenient().when(pricingService.calculateCost(any(), anyLong(), anyInt()))
+                .thenReturn(new PricingService.CostBreakdown(BigDecimal.ZERO.setScale(6), BigDecimal.ZERO.setScale(6), BigDecimal.ZERO.setScale(6)));
+        billingService = new BillingService(usageEventRepository, billingWindowRepository, billingMetrics, auditLogService, pricingService);
     }
 
     @Test
@@ -64,7 +76,7 @@ class BillingServiceTest {
         when(usageEventRepository.findByBusinessKey("req-0", "customer-1", "key-1", "gpt-4o-mini"))
                 .thenReturn(Optional.empty());
 
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-0", 0, 0, 0, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-0", 250, 0, 0, 0, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
 
         verify(usageEventRepository).persistAndFlush(any(UsageEventEntity.class));
         verify(billingMetrics).recordUsageEvent(0);
@@ -93,7 +105,7 @@ class BillingServiceTest {
             return null;
         }).when(billingWindowRepository).persist(any(BillingWindowEntity.class));
 
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-overflow", 1100, 1023, 2123, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-overflow", 4000, 1100, 1023, 2123, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
 
         assertEquals(3, persisted.size());
         assertEquals(1000, persisted.get(0).tokenTotal);
@@ -149,6 +161,7 @@ class BillingServiceTest {
                 "key-1",
                 "gpt-4o-mini",
                 "req-dup",
+                900,
                 10,
                 5,
                 15,
@@ -178,6 +191,7 @@ class BillingServiceTest {
                 "key-1",
                 "gpt-4o-mini",
                 "req-race",
+                900,
                 10,
                 5,
                 15,

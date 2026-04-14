@@ -33,6 +33,7 @@ public class UsageCaptureService {
     public UsageCaptureDecision captureUsage(String customerId,
                                              String apiKeyId,
                                              String requestId,
+                                             long durationMs,
                                              JsonNode payload,
                                              EdgeUsageExtraction edgeUsageExtraction) {
         JsonNode usageNode = payload.path("usage");
@@ -81,6 +82,7 @@ public class UsageCaptureService {
                 apiKeyId,
                 model,
                 requestId,
+                durationMs,
                 promptTokens,
                 completionTokens,
                 totalTokens,

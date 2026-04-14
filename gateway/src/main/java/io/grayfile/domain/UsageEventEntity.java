@@ -2,6 +2,7 @@ package io.grayfile.domain;
 
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -36,6 +37,9 @@ public class UsageEventEntity extends PanacheEntityBase {
     @Column(name = "total_tokens", nullable = false)
     public int totalTokens;
 
+    @Column(name = "duration_ms", nullable = false)
+    public long durationMs;
+
     @Column(name = "contract_version", nullable = false)
     public String contractVersion;
 
@@ -44,4 +48,22 @@ public class UsageEventEntity extends PanacheEntityBase {
 
     @Column(name = "usage_signature", nullable = false)
     public String usageSignature;
+
+    @Column(name = "billed_time_price", nullable = false)
+    public BigDecimal billedTimePrice;
+
+    @Column(name = "billed_token_price", nullable = false)
+    public BigDecimal billedTokenPrice;
+
+    @Column(name = "time_cost", nullable = false)
+    public BigDecimal timeCost;
+
+    @Column(name = "token_cost", nullable = false)
+    public BigDecimal tokenCost;
+
+    @Column(name = "total_cost", nullable = false)
+    public BigDecimal totalCost;
+
+    @Column(name = "pricing_source", nullable = false)
+    public String pricingSource;
 }

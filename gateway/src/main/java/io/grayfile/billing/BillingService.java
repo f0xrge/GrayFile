@@ -6,6 +6,7 @@ import io.grayfile.metrics.BillingMetrics;
 import io.grayfile.persistence.BillingWindowRepository;
 import io.grayfile.persistence.UsageEventRepository;
 import io.grayfile.service.AuditLogService;
+import io.grayfile.service.PricingService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 
@@ -24,15 +25,18 @@ public class BillingService implements BillingUsageHandler {
     private final BillingWindowRepository billingWindowRepository;
     private final BillingMetrics billingMetrics;
     private final AuditLogService auditLogService;
+    private final PricingService pricingService;
 
     public BillingService(UsageEventRepository usageEventRepository,
                           BillingWindowRepository billingWindowRepository,
                           BillingMetrics billingMetrics,
-                          AuditLogService auditLogService) {
+                          AuditLogService auditLogService,
+                          PricingService pricingService) {
         this.usageEventRepository = usageEventRepository;
         this.billingWindowRepository = billingWindowRepository;
         this.billingMetrics = billingMetrics;
         this.auditLogService = auditLogService;
+        this.pricingService = pricingService;
     }
 
     @Override
@@ -41,6 +45,7 @@ public class BillingService implements BillingUsageHandler {
                             String apiKeyId,
                             String model,
                             String requestId,
+                            long durationMs,
                             int promptTokens,
                             int completionTokens,
                             int totalTokens,
@@ -60,12 +65,21 @@ public class BillingService implements BillingUsageHandler {
         usageEvent.apiKeyId = apiKeyId;
         usageEvent.model = model;
         usageEvent.requestId = requestId;
+        usageEvent.durationMs = Math.max(durationMs, 0);
         usageEvent.promptTokens = promptTokens;
         usageEvent.completionTokens = completionTokens;
         usageEvent.totalTokens = totalTokens;
         usageEvent.contractVersion = contractVersion;
         usageEvent.extractorVersion = extractorVersion;
         usageEvent.usageSignature = usageSignature;
+        PricingService.EffectivePricing pricing = pricingService.resolveEffectivePricing(customerId, model);
+        PricingService.CostBreakdown costBreakdown = pricingService.calculateCost(pricing, usageEvent.durationMs, totalTokens);
+        usageEvent.billedTimePrice = pricing.timePricePerSecond();
+        usageEvent.billedTokenPrice = pricing.tokenPricePerThousandTokens();
+        usageEvent.timeCost = costBreakdown.timeCost();
+        usageEvent.tokenCost = costBreakdown.tokenCost();
+        usageEvent.totalCost = costBreakdown.totalCost();
+        usageEvent.pricingSource = pricing.source();
         usageEvent.eventTime = eventTime;
         try {
             usageEventRepository.persistAndFlush(usageEvent);
@@ -89,12 +103,19 @@ public class BillingService implements BillingUsageHandler {
                         "customer_id", customerId,
                         "api_key_id", apiKeyId,
                         "model", model,
+                        "duration_ms", usageEvent.durationMs,
                         "prompt_tokens", promptTokens,
                         "completion_tokens", completionTokens,
                         "total_tokens", totalTokens,
                         "contract_version", contractVersion,
                         "extractor_version", extractorVersion,
-                        "usage_signature", usageSignature
+                        "usage_signature", usageSignature,
+                        "billed_time_price", usageEvent.billedTimePrice,
+                        "billed_token_price", usageEvent.billedTokenPrice,
+                        "time_cost", usageEvent.timeCost,
+                        "token_cost", usageEvent.tokenCost,
+                        "total_cost", usageEvent.totalCost,
+                        "pricing_source", usageEvent.pricingSource
                 ),
                 eventTime
         );

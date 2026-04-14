@@ -1,7 +1,15 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ApiKey, AuditHeadersInput, Customer, LlmModel, ModelRoute } from '../models/management.models';
+import {
+  ApiKey,
+  AuditHeadersInput,
+  Customer,
+  CustomerModelPricing,
+  LlmModel,
+  ModelRoute,
+  UsageAnalyticsResponse
+} from '../models/management.models';
 
 @Injectable({ providedIn: 'root' })
 export class ManagementApiService {
@@ -90,7 +98,7 @@ export class ManagementApiService {
   setRouteActive(modelId: string, backendId: string, active: boolean, audit?: AuditHeadersInput): Observable<ModelRoute> {
     return this.http.put<ModelRoute>(`${this.baseUrl}/models/${modelId}/routes/${backendId}/active`, {
       active,
-      changeType: 'activation'
+      changeType: 'routing'
     }, {
       headers: this.auditHeaders(audit)
     });
@@ -99,7 +107,7 @@ export class ManagementApiService {
   setRouteWeight(modelId: string, backendId: string, weight: number, audit?: AuditHeadersInput): Observable<ModelRoute> {
     return this.http.put<ModelRoute>(`${this.baseUrl}/models/${modelId}/routes/${backendId}/weight`, {
       weight,
-      changeType: 'weight-adjustment'
+      changeType: 'routing'
     }, {
       headers: this.auditHeaders(audit)
     });
@@ -108,8 +116,45 @@ export class ManagementApiService {
   deleteRoute(modelId: string, backendId: string, audit?: AuditHeadersInput): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/models/${modelId}/routes/${backendId}`, {
       headers: this.auditHeaders(audit),
-      params: new HttpParams().set('changeType', 'deletion')
+      params: new HttpParams().set('changeType', 'routing')
     });
+  }
+
+  listCustomerPricing(modelId: string): Observable<CustomerModelPricing[]> {
+    return this.http.get<CustomerModelPricing[]>(`${this.baseUrl}/models/${modelId}/customer-pricing`);
+  }
+
+  upsertCustomerPricing(modelId: string, customerId: string, payload: CustomerModelPricingPayload, audit?: AuditHeadersInput): Observable<CustomerModelPricing> {
+    return this.http.put<CustomerModelPricing>(`${this.baseUrl}/models/${modelId}/customer-pricing/${customerId}`, payload, {
+      headers: this.auditHeaders(audit)
+    });
+  }
+
+  deleteCustomerPricing(modelId: string, customerId: string, audit?: AuditHeadersInput): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/models/${modelId}/customer-pricing/${customerId}`, {
+      headers: this.auditHeaders(audit),
+      params: new HttpParams().set('changeType', 'pricing')
+    });
+  }
+
+  getUsageAnalytics(filters?: UsageAnalyticsFilters): Observable<UsageAnalyticsResponse> {
+    let params = new HttpParams();
+    if (filters?.customerId) {
+      params = params.set('customerId', filters.customerId);
+    }
+    if (filters?.modelId) {
+      params = params.set('modelId', filters.modelId);
+    }
+    if (filters?.startDate) {
+      params = params.set('startDate', filters.startDate);
+    }
+    if (filters?.endDate) {
+      params = params.set('endDate', filters.endDate);
+    }
+    if (filters?.limit) {
+      params = params.set('limit', String(filters.limit));
+    }
+    return this.http.get<UsageAnalyticsResponse>(`${this.baseUrl}/usage-analytics`, { params });
   }
 
   private auditHeaders(audit?: AuditHeadersInput): HttpHeaders {
@@ -161,6 +206,8 @@ export interface ModelPayload {
   displayName: string;
   provider: string;
   active: boolean;
+  defaultTimePrice: number;
+  defaultTokenPrice: number;
   changeType: string;
 }
 
@@ -168,6 +215,8 @@ export interface ModelUpdatePayload {
   displayName: string;
   provider: string;
   active: boolean;
+  defaultTimePrice: number;
+  defaultTokenPrice: number;
   changeType: string;
 }
 
@@ -177,4 +226,18 @@ export interface ModelRoutePayload {
   weight: number;
   active: boolean;
   changeType: string;
+}
+
+export interface CustomerModelPricingPayload {
+  timePrice: number;
+  tokenPrice: number;
+  changeType: string;
+}
+
+export interface UsageAnalyticsFilters {
+  customerId?: string;
+  modelId?: string;
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
 }

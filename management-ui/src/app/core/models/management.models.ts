@@ -16,6 +16,8 @@ export interface LlmModel {
   displayName: string;
   provider: string;
   active: boolean;
+  defaultTimePrice: number;
+  defaultTokenPrice: number;
 }
 
 export interface ModelRoute {
@@ -26,6 +28,45 @@ export interface ModelRoute {
   active: boolean;
   version: number;
   updatedAt: string;
+}
+
+export interface CustomerModelPricing {
+  customerId: string;
+  modelId: string;
+  timePrice: number;
+  tokenPrice: number;
+  updatedAt: string;
+}
+
+export interface UsageAnalyticsSummary {
+  requestCount: number;
+  durationMs: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  timeCost: number;
+  tokenCost: number;
+  totalCost: number;
+}
+
+export interface UsageAnalyticsBreakdown {
+  customerId: string | null;
+  modelId: string | null;
+  requestCount: number;
+  durationMs: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  timeCost: number;
+  tokenCost: number;
+  totalCost: number;
+}
+
+export interface UsageAnalyticsResponse {
+  summary: UsageAnalyticsSummary;
+  byCustomer: UsageAnalyticsBreakdown[];
+  byModel: UsageAnalyticsBreakdown[];
+  byCustomerModel: UsageAnalyticsBreakdown[];
 }
 
 export interface AuditHeadersInput {

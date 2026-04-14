@@ -1,8 +1,10 @@
 package io.grayfile.billing;
 
+import io.grayfile.domain.LlmModelEntity;
 import io.grayfile.persistence.AuditExportStateRepository;
 import io.grayfile.persistence.AuditLogRepository;
 import io.grayfile.persistence.BillingWindowRepository;
+import io.grayfile.persistence.LlmModelRepository;
 import io.grayfile.persistence.UsageEventRepository;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -10,6 +12,7 @@ import jakarta.transaction.UserTransaction;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -30,6 +33,9 @@ class BillingServiceReplayTest {
     BillingWindowRepository billingWindowRepository;
 
     @Inject
+    LlmModelRepository llmModelRepository;
+
+    @Inject
     AuditLogRepository auditLogRepository;
 
     @Inject
@@ -45,6 +51,15 @@ class BillingServiceReplayTest {
         usageEventRepository.deleteAll();
         auditLogRepository.deleteAll();
         auditExportStateRepository.deleteAll();
+        llmModelRepository.deleteAll();
+        LlmModelEntity model = new LlmModelEntity();
+        model.id = "gpt-4o-mini";
+        model.displayName = "GPT-4o Mini";
+        model.provider = "openai";
+        model.active = true;
+        model.defaultTimePrice = BigDecimal.ZERO.setScale(6);
+        model.defaultTokenPrice = BigDecimal.ZERO.setScale(6);
+        llmModelRepository.persist(model);
         userTransaction.commit();
     }
 
@@ -52,8 +67,8 @@ class BillingServiceReplayTest {
     void shouldDeduplicateReplayOnSameRequestId() {
         Instant eventTime = Instant.parse("2026-04-09T10:15:30Z");
 
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-1", 40, 60, 100, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-1", 40, 60, 100, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime.plusSeconds(1));
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-1", 1000, 40, 60, 100, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-1", 1000, 40, 60, 100, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime.plusSeconds(1));
 
         assertEquals(1L, usageEventRepository.count());
         assertEquals(1L, billingWindowRepository.count());
@@ -65,8 +80,8 @@ class BillingServiceReplayTest {
     void shouldIgnoreRetryWithChangedTokenPayloadOnSameRequestId() {
         Instant eventTime = Instant.parse("2026-04-09T11:15:30Z");
 
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-2", 30, 20, 50, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-2", 300, 200, 500, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime.plusSeconds(5));
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-2", 1000, 30, 20, 50, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-2", 1000, 300, 200, 500, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime.plusSeconds(5));
 
         assertEquals(1L, usageEventRepository.count());
         assertEquals(50, usageEventRepository.listAll().getFirst().totalTokens);

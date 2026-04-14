@@ -6,6 +6,7 @@ import io.grayfile.persistence.ApiKeyRepository;
 import io.grayfile.persistence.AuditLogRepository;
 import io.grayfile.persistence.BillingWindowRepository;
 import io.grayfile.persistence.CustomerRepository;
+import io.grayfile.persistence.CustomerModelPricingRepository;
 import io.grayfile.persistence.LlmModelRepository;
 import io.grayfile.persistence.ModelRouteRepository;
 import jakarta.enterprise.event.Event;
@@ -17,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Optional;
+import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -35,6 +37,9 @@ class ManagementServiceRouteHealthcheckTest {
 
     @Mock
     CustomerRepository customerRepository;
+
+    @Mock
+    CustomerModelPricingRepository customerModelPricingRepository;
 
     @Mock
     LlmModelRepository llmModelRepository;
@@ -61,6 +66,12 @@ class ManagementServiceRouteHealthcheckTest {
     ModelRouteRepository modelRouteRepository;
 
     @Mock
+    PricingService pricingService;
+
+    @Mock
+    UsageAnalyticsService usageAnalyticsService;
+
+    @Mock
     Event<ModelRoutesChangedEvent> modelRoutesChangedEvent;
 
     ManagementService managementService;
@@ -69,6 +80,7 @@ class ManagementServiceRouteHealthcheckTest {
     void setUp() {
         managementService = new ManagementService(
                 customerRepository,
+                customerModelPricingRepository,
                 llmModelRepository,
                 apiKeyRepository,
                 billingWindowRepository,
@@ -77,6 +89,8 @@ class ManagementServiceRouteHealthcheckTest {
                 alertService,
                 backendHealthcheckService,
                 modelRouteRepository,
+                pricingService,
+                usageAnalyticsService,
                 modelRoutesChangedEvent,
                 false,
                 25,
@@ -170,6 +184,8 @@ class ManagementServiceRouteHealthcheckTest {
         model.displayName = "GPT-4o Mini";
         model.provider = "openai";
         model.active = true;
+        model.defaultTimePrice = BigDecimal.ZERO.setScale(6);
+        model.defaultTokenPrice = BigDecimal.ZERO.setScale(6);
         when(llmModelRepository.findByIdOptional("gpt-4o-mini")).thenReturn(Optional.of(model));
     }
 }

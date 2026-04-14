@@ -10,13 +10,63 @@
     </div>
 
     <div class="hero-panel">
-      <div class="hero-panel-label">Design direction</div>
-      <p>
-        Surface claire, typographie affirmee, accent vert signature et panneaux tres lisibles pour retrouver
-        l'energie visuelle observee sur l'univers public d'Econocom.
-      </p>
+      <div class="hero-panel-label">Monitoring usage</div>
+      @if (analytics(); as analytics) {
+        <div class="hero-kpi">
+          <strong>{{ formatNumber(analytics.summary.requestCount) }}</strong>
+          <span>requetes consolidees</span>
+        </div>
+        <div class="hero-kpi">
+          <strong>{{ formatDuration(analytics.summary.durationMs) }}</strong>
+          <span>temps cumule facture</span>
+        </div>
+        <div class="hero-kpi">
+          <strong>{{ formatNumber(analytics.summary.totalTokens) }}</strong>
+          <span>tokens consolides</span>
+        </div>
+      }
     </div>
   </article>
+
+  <mat-card class="content-card filters-card">
+    <mat-card-content>
+      <form class="field-grid" [formGroup]="filtersForm">
+        <mat-form-field>
+          <mat-label>Client</mat-label>
+          <mat-select formControlName="customerId">
+            <mat-option value="">Tous</mat-option>
+            @for (customer of customers(); track customer.id) {
+              <mat-option [value]="customer.id">{{ customer.name }} ({{ customer.id }})</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field>
+          <mat-label>Modele</mat-label>
+          <mat-select formControlName="modelId">
+            <mat-option value="">Tous</mat-option>
+            @for (model of models(); track model.id) {
+              <mat-option [value]="model.id">{{ model.displayName }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field>
+          <mat-label>Debut</mat-label>
+          <input matInput type="datetime-local" formControlName="startDate">
+        </mat-form-field>
+
+        <mat-form-field>
+          <mat-label>Fin</mat-label>
+          <input matInput type="datetime-local" formControlName="endDate">
+        </mat-form-field>
+      </form>
+
+      <div class="toolbar-actions">
+        <button mat-flat-button (click)="refreshAnalytics()">Actualiser</button>
+      </div>
+    </mat-card-content>
+  </mat-card>
 
   <section class="metrics-grid">
     @for (metric of metrics(); track metric.label) {
@@ -32,23 +82,72 @@
     }
   </section>
 
-  <section class="capabilities-grid">
-    <article class="content-card capability">
-      <div class="eyebrow">Clients</div>
-      <h3>Onboarder un tenant rapidement</h3>
-      <p>Creation, edition, activation et lecture du portefeuille client a partir de l'API management existante.</p>
-    </article>
+  @if (analytics(); as analytics) {
+    <section class="analytics-grid">
+      <article class="content-card analytics-card">
+        <div class="eyebrow">Par client</div>
+        <h3>Temps, tokens et couts par client</h3>
+        <div class="stack">
+          @for (row of analytics.byCustomer; track row.customerId) {
+            <div class="bar-row">
+              <div class="bar-copy">
+                <strong>{{ row.customerId }}</strong>
+                <span>{{ formatNumber(row.totalTokens) }} tokens • {{ formatDuration(row.durationMs) }}</span>
+              </div>
+              <div class="bar-track">
+                <span class="bar-fill" [style.width.%]="percentage(analytics.byCustomer, row.totalCost, 'totalCost')"></span>
+              </div>
+              <strong>{{ formatCurrency(row.totalCost) }}</strong>
+            </div>
+          } @empty {
+            <div class="empty-state">Aucune consommation pour ce filtre.</div>
+          }
+        </div>
+      </article>
 
-    <article class="content-card capability">
-      <div class="eyebrow">API keys</div>
-      <h3>Rattacher les acces au bon client</h3>
-      <p>Vue dediee pour emettre les cles, controler leur statut et garder la relation avec le tenant visible.</p>
-    </article>
+      <article class="content-card analytics-card">
+        <div class="eyebrow">Par modele</div>
+        <h3>Consommation par modele</h3>
+        <div class="stack">
+          @for (row of analytics.byModel; track row.modelId) {
+            <div class="bar-row">
+              <div class="bar-copy">
+                <strong>{{ row.modelId }}</strong>
+                <span>{{ formatNumber(row.requestCount) }} requetes • {{ formatNumber(row.totalTokens) }} tokens</span>
+              </div>
+              <div class="bar-track">
+                <span class="bar-fill is-secondary" [style.width.%]="percentage(analytics.byModel, row.totalTokens, 'totalTokens')"></span>
+              </div>
+              <strong>{{ formatCurrency(row.totalCost) }}</strong>
+            </div>
+          } @empty {
+            <div class="empty-state">Aucune consommation pour ce filtre.</div>
+          }
+        </div>
+      </article>
+    </section>
 
-    <article class="content-card capability">
-      <div class="eyebrow">Modeles & routes</div>
-      <h3>Operer le routage finement</h3>
-      <p>Chaque modele expose ses endpoints, poids, activation et base URL depuis une meme surface.</p>
+    <article class="content-card analytics-card combos-card">
+      <div class="eyebrow">Client x modele</div>
+      <h3>Combinaisons les plus consommatrices</h3>
+      <div class="combo-table">
+        <div class="combo-header">
+          <span>Scope</span>
+          <span>Temps</span>
+          <span>Tokens</span>
+          <span>Cout</span>
+        </div>
+        @for (row of analytics.byCustomerModel; track comboLabel(row)) {
+          <div class="combo-row">
+            <strong>{{ comboLabel(row) }}</strong>
+            <span>{{ formatDuration(row.durationMs) }}</span>
+            <span>{{ formatNumber(row.totalTokens) }}</span>
+            <span>{{ formatCurrency(row.totalCost) }}</span>
+          </div>
+        } @empty {
+          <div class="empty-state">Aucune combinaison disponible.</div>
+        }
+      </div>
     </article>
-  </section>
+  }
 </section>

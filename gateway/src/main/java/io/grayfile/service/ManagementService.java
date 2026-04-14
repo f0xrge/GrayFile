@@ -4,12 +4,14 @@ import io.grayfile.domain.ApiKeyEntity;
 import io.grayfile.domain.AuditLogEntity;
 import io.grayfile.domain.BillingWindowEntity;
 import io.grayfile.domain.CustomerEntity;
+import io.grayfile.domain.CustomerModelPricingEntity;
 import io.grayfile.domain.LlmModelEntity;
 import io.grayfile.domain.ModelRouteEntity;
 import io.grayfile.persistence.ApiKeyRepository;
 import io.grayfile.persistence.AuditLogRepository;
 import io.grayfile.persistence.BillingWindowRepository;
 import io.grayfile.persistence.CustomerRepository;
+import io.grayfile.persistence.CustomerModelPricingRepository;
 import io.grayfile.persistence.LlmModelRepository;
 import io.grayfile.persistence.ModelRouteRepository;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -18,6 +20,7 @@ import jakarta.transaction.Transactional;
 import jakarta.ws.rs.NotFoundException;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Instant;
@@ -25,11 +28,17 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.regex.Pattern;
 
 @ApplicationScoped
 public class ManagementService {
 
+    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z0-9._:-]{1,80}$");
+    private static final Pattern HOST_LITERAL_IPV4_PATTERN = Pattern.compile("^\\d+\\.\\d+\\.\\d+\\.\\d+$");
+
     private final CustomerRepository customerRepository;
+    private final CustomerModelPricingRepository customerModelPricingRepository;
     private final LlmModelRepository llmModelRepository;
     private final ApiKeyRepository apiKeyRepository;
     private final BillingWindowRepository billingWindowRepository;
@@ -38,12 +47,15 @@ public class ManagementService {
     private final AlertService alertService;
     private final BackendHealthcheckService backendHealthcheckService;
     private final ModelRouteRepository modelRouteRepository;
+    private final PricingService pricingService;
+    private final UsageAnalyticsService usageAnalyticsService;
     private final Event<ModelRoutesChangedEvent> modelRoutesChangedEvent;
     private final boolean twoPersonRuleEnabled;
     private final int bulkRoutingAlertThreshold;
     private final boolean requireActiveRouteGuardrail;
 
     public ManagementService(CustomerRepository customerRepository,
+                             CustomerModelPricingRepository customerModelPricingRepository,
                              LlmModelRepository llmModelRepository,
                              ApiKeyRepository apiKeyRepository,
                              BillingWindowRepository billingWindowRepository,
@@ -52,11 +64,14 @@ public class ManagementService {
                              AlertService alertService,
                              BackendHealthcheckService backendHealthcheckService,
                              ModelRouteRepository modelRouteRepository,
+                             PricingService pricingService,
+                             UsageAnalyticsService usageAnalyticsService,
                              Event<ModelRoutesChangedEvent> modelRoutesChangedEvent,
                              @ConfigProperty(name = "grayfile.management.two-person-rule.enabled", defaultValue = "false") boolean twoPersonRuleEnabled,
                              @ConfigProperty(name = "grayfile.management.alert.bulk-routing-threshold", defaultValue = "25") int bulkRoutingAlertThreshold,
                              @ConfigProperty(name = "grayfile.routing.guardrails.require-active-route", defaultValue = "true") boolean requireActiveRouteGuardrail) {
         this.customerRepository = customerRepository;
+        this.customerModelPricingRepository = customerModelPricingRepository;
         this.llmModelRepository = llmModelRepository;
         this.apiKeyRepository = apiKeyRepository;
         this.billingWindowRepository = billingWindowRepository;
@@ -65,6 +80,8 @@ public class ManagementService {
         this.alertService = alertService;
         this.backendHealthcheckService = backendHealthcheckService;
         this.modelRouteRepository = modelRouteRepository;
+        this.pricingService = pricingService;
+        this.usageAnalyticsService = usageAnalyticsService;
         this.modelRoutesChangedEvent = modelRoutesChangedEvent;
         this.twoPersonRuleEnabled = twoPersonRuleEnabled;
         this.bulkRoutingAlertThreshold = bulkRoutingAlertThreshold;
@@ -76,19 +93,20 @@ public class ManagementService {
     }
 
     public CustomerEntity getCustomer(String customerId) {
-        return customerRepository.findByIdOptional(customerId)
-                .orElseThrow(() -> new NotFoundException("customer not found: " + customerId));
+        String normalizedCustomerId = normalizeIdentifier(customerId, "customer id");
+        return customerRepository.findByIdOptional(normalizedCustomerId)
+                .orElseThrow(() -> new NotFoundException("customer not found: " + normalizedCustomerId));
     }
 
     @Transactional
     public CustomerEntity createCustomer(String id, String name, Boolean active, ChangeAuditContext context) {
-        id = normalizeRequired(id, "customer id");
+        id = normalizeIdentifier(id, "customer id");
         if (customerRepository.findByIdOptional(id).isPresent()) {
             throw new IllegalArgumentException("customer already exists: " + id);
         }
         CustomerEntity entity = new CustomerEntity();
         entity.id = id;
-        entity.name = normalizeRequired(name, "customer name");
+        entity.name = normalizeDisplayText(name, "customer name", 120);
         entity.active = active == null || active;
         customerRepository.persist(entity);
 
@@ -101,7 +119,7 @@ public class ManagementService {
     public CustomerEntity updateCustomer(String customerId, String name, Boolean active, ChangeAuditContext context) {
         CustomerEntity entity = getCustomer(customerId);
         Map<String, Object> oldState = customerState(entity);
-        entity.name = normalizeRequired(name, "customer name");
+        entity.name = normalizeDisplayText(name, "customer name", 120);
         entity.active = active == null || active;
         Map<String, Object> newState = customerState(entity);
         auditManagementChange("CUSTOMER_UPDATED", "customer", entity.id, context, oldState, newState);
@@ -123,22 +141,31 @@ public class ManagementService {
     }
 
     public LlmModelEntity getModel(String modelId) {
-        return llmModelRepository.findByIdOptional(modelId)
-                .orElseThrow(() -> new NotFoundException("model not found: " + modelId));
+        String normalizedModelId = normalizeIdentifier(modelId, "model id");
+        return llmModelRepository.findByIdOptional(normalizedModelId)
+                .orElseThrow(() -> new NotFoundException("model not found: " + normalizedModelId));
     }
 
     @Transactional
-    public LlmModelEntity createModel(String id, String displayName, String provider, Boolean active, ChangeAuditContext context) {
-        id = normalizeRequired(id, "model id");
+    public LlmModelEntity createModel(String id,
+                                      String displayName,
+                                      String provider,
+                                      Boolean active,
+                                      BigDecimal defaultTimePrice,
+                                      BigDecimal defaultTokenPrice,
+                                      ChangeAuditContext context) {
+        id = normalizeIdentifier(id, "model id");
         enforceTwoPersonRuleIfRequired(context);
         if (llmModelRepository.findByIdOptional(id).isPresent()) {
             throw new IllegalArgumentException("model already exists: " + id);
         }
         LlmModelEntity entity = new LlmModelEntity();
         entity.id = id;
-        entity.displayName = normalizeRequired(displayName, "model display name");
-        entity.provider = normalizeRequired(provider, "model provider");
+        entity.displayName = normalizeDisplayText(displayName, "model display name", 120);
+        entity.provider = normalizeIdentifier(provider, "model provider");
         entity.active = active == null || active;
+        entity.defaultTimePrice = pricingService.normalizeNullablePrice(defaultTimePrice);
+        entity.defaultTokenPrice = pricingService.normalizeNullablePrice(defaultTokenPrice);
         llmModelRepository.persist(entity);
 
         Map<String, Object> newState = modelState(entity);
@@ -148,14 +175,22 @@ public class ManagementService {
     }
 
     @Transactional
-    public LlmModelEntity updateModel(String modelId, String displayName, String provider, Boolean active, ChangeAuditContext context) {
+    public LlmModelEntity updateModel(String modelId,
+                                      String displayName,
+                                      String provider,
+                                      Boolean active,
+                                      BigDecimal defaultTimePrice,
+                                      BigDecimal defaultTokenPrice,
+                                      ChangeAuditContext context) {
         LlmModelEntity entity = getModel(modelId);
         enforceTwoPersonRuleIfRequired(context);
 
         Map<String, Object> oldState = modelState(entity);
-        entity.displayName = normalizeRequired(displayName, "model display name");
-        entity.provider = normalizeRequired(provider, "model provider");
+        entity.displayName = normalizeDisplayText(displayName, "model display name", 120);
+        entity.provider = normalizeIdentifier(provider, "model provider");
         entity.active = active == null || active;
+        entity.defaultTimePrice = pricingService.normalizeNullablePrice(defaultTimePrice);
+        entity.defaultTokenPrice = pricingService.normalizeNullablePrice(defaultTokenPrice);
         Map<String, Object> newState = modelState(entity);
 
         auditManagementChange("MODEL_UPDATED", "model", entity.id, context, oldState, newState);
@@ -203,8 +238,9 @@ public class ManagementService {
 
 
     public List<ModelRouteEntity> listModelRoutes(String modelId) {
-        getModel(modelId);
-        return modelRouteRepository.listByModel(modelId);
+        String normalizedModelId = normalizeIdentifier(modelId, "model id");
+        getModel(normalizedModelId);
+        return modelRouteRepository.listByModel(normalizedModelId);
     }
 
     @Transactional
@@ -214,9 +250,9 @@ public class ManagementService {
                                              Integer weight,
                                              Boolean active,
                                              ChangeAuditContext context) {
-        modelId = normalizeRequired(modelId, "model id");
+        modelId = normalizeIdentifier(modelId, "model id");
         getModel(modelId);
-        backendId = normalizeRequired(backendId, "backend id");
+        backendId = normalizeIdentifier(backendId, "backend id");
         if (modelRouteRepository.findByModelAndBackend(modelId, backendId).isPresent()) {
             throw new IllegalArgumentException("model route already exists for model=" + modelId + " backend=" + backendId);
         }
@@ -245,7 +281,7 @@ public class ManagementService {
                                                 String backendId,
                                                 boolean active,
                                                 ChangeAuditContext context) {
-        ModelRouteEntity entity = modelRouteRepository.findByModelAndBackend(normalizeRequired(modelId, "model id"), normalizeRequired(backendId, "backend id"))
+        ModelRouteEntity entity = modelRouteRepository.findByModelAndBackend(normalizeIdentifier(modelId, "model id"), normalizeIdentifier(backendId, "backend id"))
                 .orElseThrow(() -> new NotFoundException("route not found for model=" + modelId + " backend=" + backendId));
         Map<String, Object> oldState = modelRouteState(entity);
         entity.active = active;
@@ -267,7 +303,7 @@ public class ManagementService {
                                                 String backendId,
                                                 int weight,
                                                 ChangeAuditContext context) {
-        ModelRouteEntity entity = modelRouteRepository.findByModelAndBackend(normalizeRequired(modelId, "model id"), normalizeRequired(backendId, "backend id"))
+        ModelRouteEntity entity = modelRouteRepository.findByModelAndBackend(normalizeIdentifier(modelId, "model id"), normalizeIdentifier(backendId, "backend id"))
                 .orElseThrow(() -> new NotFoundException("route not found for model=" + modelId + " backend=" + backendId));
         Map<String, Object> oldState = modelRouteState(entity);
         entity.weight = normalizeWeight(weight);
@@ -285,8 +321,8 @@ public class ManagementService {
 
     @Transactional
     public void deleteModelRoute(String modelId, String backendId, ChangeAuditContext context) {
-        String normalizedModelId = normalizeRequired(modelId, "model id");
-        String normalizedBackendId = normalizeRequired(backendId, "backend id");
+        String normalizedModelId = normalizeIdentifier(modelId, "model id");
+        String normalizedBackendId = normalizeIdentifier(backendId, "backend id");
         ModelRouteEntity existing = modelRouteRepository.findByModelAndBackend(normalizedModelId, normalizedBackendId)
                 .orElseThrow(() -> new NotFoundException("route not found for model=" + normalizedModelId + " backend=" + normalizedBackendId));
         Map<String, Object> oldState = modelRouteState(existing);
@@ -301,21 +337,22 @@ public class ManagementService {
     }
 
     public ApiKeyEntity getApiKey(String apiKeyId) {
-        return apiKeyRepository.findByIdOptional(apiKeyId)
-                .orElseThrow(() -> new NotFoundException("api key not found: " + apiKeyId));
+        String normalizedApiKeyId = normalizeIdentifier(apiKeyId, "api key id");
+        return apiKeyRepository.findByIdOptional(normalizedApiKeyId)
+                .orElseThrow(() -> new NotFoundException("api key not found: " + normalizedApiKeyId));
     }
 
     @Transactional
     public ApiKeyEntity createApiKey(String id, String customerId, String name, Boolean active, ChangeAuditContext context) {
-        id = normalizeRequired(id, "api key id");
+        id = normalizeIdentifier(id, "api key id");
         if (apiKeyRepository.findByIdOptional(id).isPresent()) {
             throw new IllegalArgumentException("api key already exists: " + id);
         }
-        CustomerEntity customer = getCustomer(normalizeRequired(customerId, "api key customer id"));
+        CustomerEntity customer = getCustomer(normalizeIdentifier(customerId, "api key customer id"));
         ApiKeyEntity entity = new ApiKeyEntity();
         entity.id = id;
         entity.customerId = customer.id;
-        entity.name = normalizeRequired(name, "api key name");
+        entity.name = normalizeDisplayText(name, "api key name", 120);
         entity.active = active == null || active;
         apiKeyRepository.persist(entity);
 
@@ -328,7 +365,7 @@ public class ManagementService {
     public ApiKeyEntity updateApiKey(String apiKeyId, String name, Boolean active, ChangeAuditContext context) {
         ApiKeyEntity entity = getApiKey(apiKeyId);
         Map<String, Object> oldState = apiKeyState(entity);
-        entity.name = normalizeRequired(name, "api key name");
+        entity.name = normalizeDisplayText(name, "api key name", 120);
         entity.active = active == null || active;
         Map<String, Object> newState = apiKeyState(entity);
         auditManagementChange("API_KEY_UPDATED", "api_key", entity.id, context, oldState, newState);
@@ -365,6 +402,53 @@ public class ManagementService {
         return billingWindowRepository.listFiltered(customerId, apiKeyId, startFrom, endTo);
     }
 
+    public List<CustomerModelPricingEntity> listCustomerPricingForModel(String modelId) {
+        String normalizedModelId = normalizeIdentifier(modelId, "model id");
+        getModel(normalizedModelId);
+        return customerModelPricingRepository.listByModel(normalizedModelId);
+    }
+
+    @Transactional
+    public CustomerModelPricingEntity upsertCustomerPricing(String modelId,
+                                                            String customerId,
+                                                            BigDecimal timePrice,
+                                                            BigDecimal tokenPrice,
+                                                            ChangeAuditContext context) {
+        enforceTwoPersonRuleIfRequired(context);
+        String normalizedModelId = normalizeIdentifier(modelId, "model id");
+        String normalizedCustomerId = normalizeIdentifier(customerId, "customer id");
+        getModel(normalizedModelId);
+        getCustomer(normalizedCustomerId);
+
+        CustomerModelPricingEntity entity = customerModelPricingRepository.findByCustomerAndModel(normalizedCustomerId, normalizedModelId).orElse(null);
+        Map<String, Object> oldState = entity == null ? Map.of() : customerPricingState(entity);
+        if (entity == null) {
+            entity = new CustomerModelPricingEntity();
+            entity.id = UUID.randomUUID();
+            entity.customerId = normalizedCustomerId;
+            entity.modelId = normalizedModelId;
+            customerModelPricingRepository.persist(entity);
+        }
+        entity.timePrice = pricingService.normalizePrice(timePrice, "customer-model time price");
+        entity.tokenPrice = pricingService.normalizePrice(tokenPrice, "customer-model token price");
+        entity.updatedAt = Instant.now();
+
+        auditManagementChange("CUSTOMER_MODEL_PRICING_UPSERTED", "customer_model_pricing", normalizedCustomerId + ":" + normalizedModelId, context, oldState, customerPricingState(entity));
+        return entity;
+    }
+
+    @Transactional
+    public void deleteCustomerPricing(String modelId, String customerId, ChangeAuditContext context) {
+        enforceTwoPersonRuleIfRequired(context);
+        String normalizedModelId = normalizeIdentifier(modelId, "model id");
+        String normalizedCustomerId = normalizeIdentifier(customerId, "customer id");
+        CustomerModelPricingEntity entity = customerModelPricingRepository.findByCustomerAndModel(normalizedCustomerId, normalizedModelId)
+                .orElseThrow(() -> new NotFoundException("customer pricing not found for customer=" + normalizedCustomerId + " model=" + normalizedModelId));
+        Map<String, Object> oldState = customerPricingState(entity);
+        customerModelPricingRepository.delete(entity);
+        auditManagementChange("CUSTOMER_MODEL_PRICING_DELETED", "customer_model_pricing", normalizedCustomerId + ":" + normalizedModelId, context, oldState, Map.of());
+    }
+
     public List<AuditLogEntity> listAuditEvents(String eventType,
                                                 Instant startFrom,
                                                 Instant endTo,
@@ -385,24 +469,45 @@ public class ManagementService {
         );
     }
 
+    public UsageAnalyticsService.UsageAnalyticsResponse getUsageAnalytics(String customerId,
+                                                                          String modelId,
+                                                                          Instant startFrom,
+                                                                          Instant endTo,
+                                                                          int limit) {
+        if (startFrom != null && endTo != null && startFrom.isAfter(endTo)) {
+            throw new IllegalArgumentException("startDate must be before or equal to endDate");
+        }
+        return usageAnalyticsService.buildAnalytics(
+                normalizeOptional(customerId),
+                normalizeOptional(modelId),
+                startFrom,
+                endTo,
+                limit
+        );
+    }
+
     public UsageScopeValidation validateUsageScope(String customerId, String apiKeyId, String modelId) {
-        CustomerEntity customer = customerRepository.findByIdOptional(customerId).orElse(null);
+        String normalizedCustomerId = normalizeIdentifier(customerId, "customer id");
+        String normalizedApiKeyId = normalizeIdentifier(apiKeyId, "api key id");
+        String normalizedModelId = normalizeIdentifier(modelId, "model id");
+
+        CustomerEntity customer = customerRepository.findByIdOptional(normalizedCustomerId).orElse(null);
         if (customer == null || !customer.active) {
-            return UsageScopeValidation.failure("unknown or inactive customer: " + customerId);
+            return UsageScopeValidation.failure("unknown or inactive customer: " + normalizedCustomerId);
         }
 
-        ApiKeyEntity apiKey = apiKeyRepository.findByIdOptional(apiKeyId).orElse(null);
+        ApiKeyEntity apiKey = apiKeyRepository.findByIdOptional(normalizedApiKeyId).orElse(null);
         if (apiKey == null || !apiKey.active) {
-            return UsageScopeValidation.failure("unknown or inactive api key: " + apiKeyId);
+            return UsageScopeValidation.failure("unknown or inactive api key: " + normalizedApiKeyId);
         }
 
-        if (!apiKey.customerId.equals(customerId)) {
-            return UsageScopeValidation.failure("api key " + apiKeyId + " does not belong to customer " + customerId);
+        if (!apiKey.customerId.equals(normalizedCustomerId)) {
+            return UsageScopeValidation.failure("api key " + normalizedApiKeyId + " does not belong to customer " + normalizedCustomerId);
         }
 
-        LlmModelEntity model = llmModelRepository.findByIdOptional(modelId).orElse(null);
+        LlmModelEntity model = llmModelRepository.findByIdOptional(normalizedModelId).orElse(null);
         if (model == null || !model.active) {
-            return UsageScopeValidation.failure("unknown or inactive model: " + modelId);
+            return UsageScopeValidation.failure("unknown or inactive model: " + normalizedModelId);
         }
 
         return UsageScopeValidation.success();
@@ -467,7 +572,9 @@ public class ManagementService {
                 "id", entity.id,
                 "display_name", entity.displayName,
                 "provider", entity.provider,
-                "active", entity.active
+                "active", entity.active,
+                "default_time_price", entity.defaultTimePrice,
+                "default_token_price", entity.defaultTokenPrice
         );
     }
 
@@ -489,6 +596,16 @@ public class ManagementService {
                 "customer_id", entity.customerId,
                 "name", entity.name,
                 "active", entity.active
+        );
+    }
+
+    private Map<String, Object> customerPricingState(CustomerModelPricingEntity entity) {
+        return auditLogService.payloadOf(
+                "customer_id", entity.customerId,
+                "model_id", entity.modelId,
+                "time_price", entity.timePrice,
+                "token_price", entity.tokenPrice,
+                "updated_at", entity.updatedAt
         );
     }
 
@@ -520,6 +637,12 @@ public class ManagementService {
             if (uri.getHost() == null || uri.getHost().isBlank()) {
                 throw new IllegalArgumentException("base url must include a host: " + normalized);
             }
+            if (uri.getUserInfo() != null && !uri.getUserInfo().isBlank()) {
+                throw new IllegalArgumentException("base url must not include credentials: " + normalized);
+            }
+            if (isUnsafeHost(uri.getHost())) {
+                throw new IllegalArgumentException("base url host is not allowed for routing: " + normalized);
+            }
             if (uri.getRawQuery() != null || uri.getRawFragment() != null) {
                 throw new IllegalArgumentException("base url must not include query params or fragments: " + normalized);
             }
@@ -546,12 +669,52 @@ public class ManagementService {
         return value.trim();
     }
 
+    private String normalizeIdentifier(String value, String label) {
+        String normalized = normalizeRequired(value, label);
+        if (!IDENTIFIER_PATTERN.matcher(normalized).matches()) {
+            throw new IllegalArgumentException(label + " must match " + IDENTIFIER_PATTERN.pattern());
+        }
+        return normalized;
+    }
+
     private String normalizeOptional(String value) {
         if (value == null) {
             return null;
         }
         String normalized = value.trim();
         return normalized.isEmpty() ? null : normalized;
+    }
+
+    private String normalizeDisplayText(String value, String label, int maxLength) {
+        String normalized = normalizeRequired(value, label);
+        if (normalized.length() > maxLength) {
+            throw new IllegalArgumentException(label + " must be <= " + maxLength + " characters");
+        }
+        for (int index = 0; index < normalized.length(); index += 1) {
+            if (Character.isISOControl(normalized.charAt(index))) {
+                throw new IllegalArgumentException(label + " must not contain control characters");
+            }
+        }
+        return normalized;
+    }
+
+    private boolean isUnsafeHost(String host) {
+        String normalizedHost = host.trim().toLowerCase();
+        if (normalizedHost.equals("localhost") || normalizedHost.equals("0.0.0.0") || normalizedHost.equals("::1") || normalizedHost.endsWith(".localhost")) {
+            return true;
+        }
+        if (HOST_LITERAL_IPV4_PATTERN.matcher(normalizedHost).matches()) {
+            String[] octets = normalizedHost.split("\\.");
+            int first = Integer.parseInt(octets[0]);
+            int second = Integer.parseInt(octets[1]);
+            return first == 10
+                    || first == 127
+                    || first == 0
+                    || (first == 169 && second == 254)
+                    || (first == 172 && second >= 16 && second <= 31)
+                    || (first == 192 && second == 168);
+        }
+        return normalizedHost.startsWith("fc") || normalizedHost.startsWith("fd");
     }
 
     public record UsageScopeValidation(boolean valid, String message) {
