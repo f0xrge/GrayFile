@@ -89,15 +89,25 @@ class ManagementResourceTest {
 
         given()
                 .contentType("application/json")
-                .body(Map.of("id", "gpt-4o-mini", "displayName", "GPT-4o Mini", "provider", "openai"))
+                .body(Map.of(
+                        "id", "gpt-4o-mini",
+                        "displayName", "GPT-4o Mini",
+                        "provider", "openai",
+                        "defaultTimeCriterionSeconds", 600,
+                        "defaultTimePrice", 10,
+                        "defaultTokenCriterion", 1000,
+                        "defaultTokenPrice", 2
+                ))
                 .when()
                 .post("/management/v1/models")
                 .then()
                 .statusCode(201)
                 .body("id", equalTo("gpt-4o-mini"))
                 .body("provider", equalTo("openai"))
-                .body("defaultTimePrice", equalTo(0f))
-                .body("defaultTokenPrice", equalTo(0f));
+                .body("defaultTimeCriterionSeconds", equalTo(600))
+                .body("defaultTimePrice", equalTo(10f))
+                .body("defaultTokenCriterion", equalTo(1000))
+                .body("defaultTokenPrice", equalTo(2f));
 
         given()
                 .contentType("application/json")
@@ -281,7 +291,15 @@ class ManagementResourceTest {
     void shouldManageModelRoutesLifecycle() {
         given()
                 .contentType("application/json")
-                .body(Map.of("id", "gpt-4o-mini", "displayName", "GPT-4o Mini", "provider", "openai"))
+                .body(Map.of(
+                        "id", "gpt-4o-mini",
+                        "displayName", "GPT-4o Mini",
+                        "provider", "openai",
+                        "defaultTimeCriterionSeconds", 600,
+                        "defaultTimePrice", 10,
+                        "defaultTokenCriterion", 1000,
+                        "defaultTokenPrice", 2
+                ))
                 .when()
                 .post("/management/v1/models")
                 .then()
@@ -342,7 +360,15 @@ class ManagementResourceTest {
     void shouldRejectInvalidModelRouteBaseUrl() {
         given()
                 .contentType("application/json")
-                .body(Map.of("id", "gpt-4o-mini", "displayName", "GPT-4o Mini", "provider", "openai"))
+                .body(Map.of(
+                        "id", "gpt-4o-mini",
+                        "displayName", "GPT-4o Mini",
+                        "provider", "openai",
+                        "defaultTimeCriterionSeconds", 600,
+                        "defaultTimePrice", 10,
+                        "defaultTokenCriterion", 1000,
+                        "defaultTokenPrice", 2
+                ))
                 .when()
                 .post("/management/v1/models")
                 .then()
@@ -362,7 +388,15 @@ class ManagementResourceTest {
     void shouldRejectUnsafeModelRouteBaseUrlHost() {
         given()
                 .contentType("application/json")
-                .body(Map.of("id", "gpt-4o-mini", "displayName", "GPT-4o Mini", "provider", "openai"))
+                .body(Map.of(
+                        "id", "gpt-4o-mini",
+                        "displayName", "GPT-4o Mini",
+                        "provider", "openai",
+                        "defaultTimeCriterionSeconds", 600,
+                        "defaultTimePrice", 10,
+                        "defaultTokenCriterion", 1000,
+                        "defaultTokenPrice", 2
+                ))
                 .when()
                 .post("/management/v1/models")
                 .then()
@@ -384,13 +418,21 @@ class ManagementResourceTest {
 
         given()
                 .contentType("application/json")
-                .body(Map.of("timePrice", 2.5, "tokenPrice", 1.2, "changeType", "pricing"))
+                .body(Map.of(
+                        "timeCriterionSeconds", 600,
+                        "timePrice", 10,
+                        "tokenCriterion", 1000,
+                        "tokenPrice", 1.2,
+                        "changeType", "pricing"
+                ))
                 .when()
                 .put("/management/v1/models/gpt-4o-mini/customer-pricing/customer-1")
                 .then()
                 .statusCode(200)
                 .body("customerId", equalTo("customer-1"))
-                .body("modelId", equalTo("gpt-4o-mini"));
+                .body("modelId", equalTo("gpt-4o-mini"))
+                .body("timeCriterionSeconds", equalTo(600))
+                .body("tokenCriterion", equalTo(1000));
 
         persistUsageEvent(
                 "customer-1",
@@ -444,7 +486,15 @@ class ManagementResourceTest {
     void shouldRollbackWhenDeletingLastActiveRoute() {
         given()
                 .contentType("application/json")
-                .body(Map.of("id", "gpt-4o-mini", "displayName", "GPT-4o Mini", "provider", "openai"))
+                .body(Map.of(
+                        "id", "gpt-4o-mini",
+                        "displayName", "GPT-4o Mini",
+                        "provider", "openai",
+                        "defaultTimeCriterionSeconds", 600,
+                        "defaultTimePrice", 10,
+                        "defaultTokenCriterion", 1000,
+                        "defaultTokenPrice", 2
+                ))
                 .when()
                 .post("/management/v1/models")
                 .then()
@@ -494,7 +544,9 @@ class ManagementResourceTest {
         model.displayName = "GPT-4o Mini";
         model.provider = "openai";
         model.active = true;
+        model.defaultTimeCriterionSeconds = 600;
         model.defaultTimePrice = BigDecimal.ZERO.setScale(6);
+        model.defaultTokenCriterion = 1000;
         model.defaultTokenPrice = BigDecimal.ZERO.setScale(6);
         llmModelRepository.persist(model);
 
@@ -564,7 +616,9 @@ class ManagementResourceTest {
         entity.contractVersion = "usage_extraction.v1";
         entity.extractorVersion = "gateway-backend-payload-v1";
         entity.usageSignature = "sig";
+        entity.billedTimeCriterionSeconds = 600;
         entity.billedTimePrice = BigDecimal.ZERO.setScale(6);
+        entity.billedTokenCriterion = 1000;
         entity.billedTokenPrice = BigDecimal.ZERO.setScale(6);
         entity.timeCost = timeCost;
         entity.tokenCost = tokenCost;

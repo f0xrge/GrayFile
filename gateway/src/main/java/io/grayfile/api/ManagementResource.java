@@ -136,7 +136,9 @@ public class ManagementResource {
                 request.displayName(),
                 request.provider(),
                 request.active(),
+                request.defaultTimeCriterionSeconds(),
                 request.defaultTimePrice(),
+                request.defaultTokenCriterion(),
                 request.defaultTokenPrice(),
                 auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
         );
@@ -158,7 +160,9 @@ public class ManagementResource {
                 request.displayName(),
                 request.provider(),
                 request.active(),
+                request.defaultTimeCriterionSeconds(),
                 request.defaultTimePrice(),
+                request.defaultTokenCriterion(),
                 request.defaultTokenPrice(),
                 auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
         ));
@@ -285,7 +289,9 @@ public class ManagementResource {
         return CustomerModelPricingResponse.from(managementService.upsertCustomerPricing(
                 modelId,
                 customerId,
+                request.timeCriterionSeconds(),
                 request.timePrice(),
+                request.tokenCriterion(),
                 request.tokenPrice(),
                 auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
         ));
@@ -441,7 +447,9 @@ public class ManagementResource {
                                      String displayName,
                                      String provider,
                                      Boolean active,
+                                     Integer defaultTimeCriterionSeconds,
                                      BigDecimal defaultTimePrice,
+                                     Integer defaultTokenCriterion,
                                      BigDecimal defaultTokenPrice,
                                      String changeType) {
     }
@@ -449,7 +457,9 @@ public class ManagementResource {
     public record ModelUpdateRequest(String displayName,
                                      String provider,
                                      Boolean active,
+                                     Integer defaultTimeCriterionSeconds,
                                      BigDecimal defaultTimePrice,
+                                     Integer defaultTokenCriterion,
                                      BigDecimal defaultTokenPrice,
                                      String changeType) {
     }
@@ -469,7 +479,11 @@ public class ManagementResource {
     public record ModelRouteWeightRequest(int weight, String changeType) {
     }
 
-    public record CustomerModelPricingUpsertRequest(BigDecimal timePrice, BigDecimal tokenPrice, String changeType) {
+    public record CustomerModelPricingUpsertRequest(Integer timeCriterionSeconds,
+                                                    BigDecimal timePrice,
+                                                    Integer tokenCriterion,
+                                                    BigDecimal tokenPrice,
+                                                    String changeType) {
     }
 
     public record CustomerResponse(String id, String name, boolean active) {
@@ -482,7 +496,9 @@ public class ManagementResource {
                                 String displayName,
                                 String provider,
                                 boolean active,
+                                int defaultTimeCriterionSeconds,
                                 BigDecimal defaultTimePrice,
+                                int defaultTokenCriterion,
                                 BigDecimal defaultTokenPrice) {
         static ModelResponse from(LlmModelEntity entity) {
             return new ModelResponse(
@@ -490,7 +506,9 @@ public class ManagementResource {
                     entity.displayName,
                     entity.provider,
                     entity.active,
+                    entity.defaultTimeCriterionSeconds,
                     entity.defaultTimePrice,
+                    entity.defaultTokenCriterion,
                     entity.defaultTokenPrice
             );
         }
@@ -516,11 +534,21 @@ public class ManagementResource {
 
     public record CustomerModelPricingResponse(String customerId,
                                                String modelId,
+                                               int timeCriterionSeconds,
                                                BigDecimal timePrice,
+                                               int tokenCriterion,
                                                BigDecimal tokenPrice,
                                                Instant updatedAt) {
         static CustomerModelPricingResponse from(CustomerModelPricingEntity entity) {
-            return new CustomerModelPricingResponse(entity.customerId, entity.modelId, entity.timePrice, entity.tokenPrice, entity.updatedAt);
+            return new CustomerModelPricingResponse(
+                    entity.customerId,
+                    entity.modelId,
+                    entity.timeCriterionSeconds,
+                    entity.timePrice,
+                    entity.tokenCriterion,
+                    entity.tokenPrice,
+                    entity.updatedAt
+            );
         }
     }
 

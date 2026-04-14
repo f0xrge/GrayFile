@@ -184,7 +184,9 @@ class ManagementServiceRouteHealthcheckTest {
         model.displayName = "GPT-4o Mini";
         model.provider = "openai";
         model.active = true;
+        model.defaultTimeCriterionSeconds = 600;
         model.defaultTimePrice = BigDecimal.ZERO.setScale(6);
+        model.defaultTokenCriterion = 1000;
         model.defaultTokenPrice = BigDecimal.ZERO.setScale(6);
         when(llmModelRepository.findByIdOptional("gpt-4o-mini")).thenReturn(Optional.of(model));
     }

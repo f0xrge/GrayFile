@@ -21,12 +21,10 @@ services:
       GRAYFILE_DB_URL: jdbc:postgresql://postgres:5432/grayfile
       GRAYFILE_DB_USER: grayfile
       GRAYFILE_DB_PASSWORD: grayfile
-      GRAYFILE_BACKEND_URL: http://envoy:10000
+      GRAYFILE_BACKEND_URL: http://mock-backend:8080
     depends_on:
       postgres:
         condition: service_healthy
-      envoy:
-        condition: service_started
 
   postgres:
     image: postgres:16
@@ -46,6 +44,7 @@ services:
       retries: 10
 
   mock-backend:
+    profiles: ["inference"]
     image: wiremock/wiremock:3.13.1
     container_name: grayfile-mock-backend
     command: ["--global-response-templating"]
@@ -56,6 +55,7 @@ services:
 
 
   ext-proc:
+    profiles: ["inference"]
     build:
       context: ./ext_proc
       dockerfile: Dockerfile
@@ -64,6 +64,7 @@ services:
       - "18080:18080"
 
   envoy:
+    profiles: ["inference"]
     image: envoyproxy/envoy:v1.33.2
     container_name: grayfile-envoy
     command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]

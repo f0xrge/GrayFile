@@ -16,7 +16,9 @@ export interface LlmModel {
   displayName: string;
   provider: string;
   active: boolean;
+  defaultTimeCriterionSeconds: number;
   defaultTimePrice: number;
+  defaultTokenCriterion: number;
   defaultTokenPrice: number;
 }
 
@@ -33,7 +35,9 @@ export interface ModelRoute {
 export interface CustomerModelPricing {
   customerId: string;
   modelId: string;
+  timeCriterionSeconds: number;
   timePrice: number;
+  tokenCriterion: number;
   tokenPrice: number;
   updatedAt: string;
 }

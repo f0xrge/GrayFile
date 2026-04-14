@@ -51,7 +51,9 @@ export class ModelsPageComponent {
     id: ['', Validators.required],
     displayName: ['', Validators.required],
     provider: ['', Validators.required],
+    defaultTimeCriterionSeconds: [600, [Validators.required, Validators.min(1)]],
     defaultTimePrice: [0, [Validators.required, Validators.min(0)]],
+    defaultTokenCriterion: [1000, [Validators.required, Validators.min(1)]],
     defaultTokenPrice: [0, [Validators.required, Validators.min(0)]],
     active: [true]
   });
@@ -65,7 +67,9 @@ export class ModelsPageComponent {
 
   protected readonly pricingForm = this.fb.nonNullable.group({
     customerId: ['', Validators.required],
+    timeCriterionSeconds: [600, [Validators.required, Validators.min(1)]],
     timePrice: [0, [Validators.required, Validators.min(0)]],
+    tokenCriterion: [1000, [Validators.required, Validators.min(1)]],
     tokenPrice: [0, [Validators.required, Validators.min(0)]]
   });
 
@@ -91,7 +95,9 @@ export class ModelsPageComponent {
       id: model.id,
       displayName: model.displayName,
       provider: model.provider,
+      defaultTimeCriterionSeconds: model.defaultTimeCriterionSeconds,
       defaultTimePrice: model.defaultTimePrice,
+      defaultTokenCriterion: model.defaultTokenCriterion,
       defaultTokenPrice: model.defaultTokenPrice,
       active: model.active
     });
@@ -101,7 +107,16 @@ export class ModelsPageComponent {
 
   protected resetModelForm(): void {
     this.selectedModelId.set(null);
-    this.modelForm.reset({ id: '', displayName: '', provider: '', defaultTimePrice: 0, defaultTokenPrice: 0, active: true });
+    this.modelForm.reset({
+      id: '',
+      displayName: '',
+      provider: '',
+      defaultTimeCriterionSeconds: 600,
+      defaultTimePrice: 0,
+      defaultTokenCriterion: 1000,
+      defaultTokenPrice: 0,
+      active: true
+    });
     this.modelForm.controls.id.enable();
     this.resetRouteForm();
     this.resetPricingForm();
@@ -124,7 +139,9 @@ export class ModelsPageComponent {
             displayName: raw.displayName,
             provider: raw.provider,
             active: raw.active,
+            defaultTimeCriterionSeconds: raw.defaultTimeCriterionSeconds,
             defaultTimePrice: raw.defaultTimePrice,
+            defaultTokenCriterion: raw.defaultTokenCriterion,
             defaultTokenPrice: raw.defaultTokenPrice,
             changeType: 'update'
           },
@@ -136,7 +153,9 @@ export class ModelsPageComponent {
             displayName: raw.displayName,
             provider: raw.provider,
             active: raw.active,
+            defaultTimeCriterionSeconds: raw.defaultTimeCriterionSeconds,
             defaultTimePrice: raw.defaultTimePrice,
+            defaultTokenCriterion: raw.defaultTokenCriterion,
             defaultTokenPrice: raw.defaultTokenPrice,
             changeType: 'create'
           },
@@ -197,7 +216,9 @@ export class ModelsPageComponent {
         model.id,
         raw.customerId,
         {
+          timeCriterionSeconds: raw.timeCriterionSeconds,
           timePrice: raw.timePrice,
+          tokenCriterion: raw.tokenCriterion,
           tokenPrice: raw.tokenPrice,
           changeType: 'pricing'
         },
@@ -213,7 +234,9 @@ export class ModelsPageComponent {
   protected editPricing(pricing: CustomerModelPricing): void {
     this.pricingForm.setValue({
       customerId: pricing.customerId,
+      timeCriterionSeconds: pricing.timeCriterionSeconds,
       timePrice: pricing.timePrice,
+      tokenCriterion: pricing.tokenCriterion,
       tokenPrice: pricing.tokenPrice
     });
   }
@@ -229,7 +252,7 @@ export class ModelsPageComponent {
   }
 
   protected resetPricingForm(): void {
-    this.pricingForm.reset({ customerId: '', timePrice: 0, tokenPrice: 0 });
+    this.pricingForm.reset({ customerId: '', timeCriterionSeconds: 600, timePrice: 0, tokenCriterion: 1000, tokenPrice: 0 });
   }
 
   protected saveRoute(): void {

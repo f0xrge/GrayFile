@@ -206,7 +206,9 @@ export interface ModelPayload {
   displayName: string;
   provider: string;
   active: boolean;
+  defaultTimeCriterionSeconds: number;
   defaultTimePrice: number;
+  defaultTokenCriterion: number;
   defaultTokenPrice: number;
   changeType: string;
 }
@@ -215,7 +217,9 @@ export interface ModelUpdatePayload {
   displayName: string;
   provider: string;
   active: boolean;
+  defaultTimeCriterionSeconds: number;
   defaultTimePrice: number;
+  defaultTokenCriterion: number;
   defaultTokenPrice: number;
   changeType: string;
 }
@@ -229,7 +233,9 @@ export interface ModelRoutePayload {
 }
 
 export interface CustomerModelPricingPayload {
+  timeCriterionSeconds: number;
   timePrice: number;
+  tokenCriterion: number;
   tokenPrice: number;
   changeType: string;
 }

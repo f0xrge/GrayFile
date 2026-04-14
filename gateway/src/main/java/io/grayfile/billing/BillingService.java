@@ -74,8 +74,10 @@ public class BillingService implements BillingUsageHandler {
         usageEvent.usageSignature = usageSignature;
         PricingService.EffectivePricing pricing = pricingService.resolveEffectivePricing(customerId, model);
         PricingService.CostBreakdown costBreakdown = pricingService.calculateCost(pricing, usageEvent.durationMs, totalTokens);
-        usageEvent.billedTimePrice = pricing.timePricePerSecond();
-        usageEvent.billedTokenPrice = pricing.tokenPricePerThousandTokens();
+        usageEvent.billedTimeCriterionSeconds = pricing.timeCriterionSeconds();
+        usageEvent.billedTimePrice = pricing.timePrice();
+        usageEvent.billedTokenCriterion = pricing.tokenCriterion();
+        usageEvent.billedTokenPrice = pricing.tokenPrice();
         usageEvent.timeCost = costBreakdown.timeCost();
         usageEvent.tokenCost = costBreakdown.tokenCost();
         usageEvent.totalCost = costBreakdown.totalCost();
@@ -110,7 +112,9 @@ public class BillingService implements BillingUsageHandler {
                         "contract_version", contractVersion,
                         "extractor_version", extractorVersion,
                         "usage_signature", usageSignature,
+                        "billed_time_criterion_seconds", usageEvent.billedTimeCriterionSeconds,
                         "billed_time_price", usageEvent.billedTimePrice,
+                        "billed_token_criterion", usageEvent.billedTokenCriterion,
                         "billed_token_price", usageEvent.billedTokenPrice,
                         "time_cost", usageEvent.timeCost,
                         "token_cost", usageEvent.tokenCost,

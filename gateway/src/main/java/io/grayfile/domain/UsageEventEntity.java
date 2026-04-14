@@ -49,8 +49,14 @@ public class UsageEventEntity extends PanacheEntityBase {
     @Column(name = "usage_signature", nullable = false)
     public String usageSignature;
 
+    @Column(name = "billed_time_criterion_seconds", nullable = false)
+    public int billedTimeCriterionSeconds;
+
     @Column(name = "billed_time_price", nullable = false)
     public BigDecimal billedTimePrice;
+
+    @Column(name = "billed_token_criterion", nullable = false)
+    public int billedTokenCriterion;
 
     @Column(name = "billed_token_price", nullable = false)
     public BigDecimal billedTokenPrice;

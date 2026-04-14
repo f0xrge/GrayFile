@@ -23,8 +23,14 @@ public class LlmModelEntity extends PanacheEntityBase {
     @Column(nullable = false)
     public boolean active;
 
+    @Column(name = "default_time_criterion_seconds", nullable = false)
+    public int defaultTimeCriterionSeconds;
+
     @Column(name = "default_time_price", nullable = false)
     public BigDecimal defaultTimePrice;
+
+    @Column(name = "default_token_criterion", nullable = false)
+    public int defaultTokenCriterion;
 
     @Column(name = "default_token_price", nullable = false)
     public BigDecimal defaultTokenPrice;

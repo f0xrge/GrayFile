@@ -151,7 +151,9 @@ public class ManagementService {
                                       String displayName,
                                       String provider,
                                       Boolean active,
+                                      Integer defaultTimeCriterionSeconds,
                                       BigDecimal defaultTimePrice,
+                                      Integer defaultTokenCriterion,
                                       BigDecimal defaultTokenPrice,
                                       ChangeAuditContext context) {
         id = normalizeIdentifier(id, "model id");
@@ -164,7 +166,9 @@ public class ManagementService {
         entity.displayName = normalizeDisplayText(displayName, "model display name", 120);
         entity.provider = normalizeIdentifier(provider, "model provider");
         entity.active = active == null || active;
+        entity.defaultTimeCriterionSeconds = pricingService.normalizeCriterion(defaultTimeCriterionSeconds, "model-default time criterion");
         entity.defaultTimePrice = pricingService.normalizeNullablePrice(defaultTimePrice);
+        entity.defaultTokenCriterion = pricingService.normalizeCriterion(defaultTokenCriterion, "model-default token criterion");
         entity.defaultTokenPrice = pricingService.normalizeNullablePrice(defaultTokenPrice);
         llmModelRepository.persist(entity);
 
@@ -179,7 +183,9 @@ public class ManagementService {
                                       String displayName,
                                       String provider,
                                       Boolean active,
+                                      Integer defaultTimeCriterionSeconds,
                                       BigDecimal defaultTimePrice,
+                                      Integer defaultTokenCriterion,
                                       BigDecimal defaultTokenPrice,
                                       ChangeAuditContext context) {
         LlmModelEntity entity = getModel(modelId);
@@ -189,7 +195,9 @@ public class ManagementService {
         entity.displayName = normalizeDisplayText(displayName, "model display name", 120);
         entity.provider = normalizeIdentifier(provider, "model provider");
         entity.active = active == null || active;
+        entity.defaultTimeCriterionSeconds = pricingService.normalizeCriterion(defaultTimeCriterionSeconds, "model-default time criterion");
         entity.defaultTimePrice = pricingService.normalizeNullablePrice(defaultTimePrice);
+        entity.defaultTokenCriterion = pricingService.normalizeCriterion(defaultTokenCriterion, "model-default token criterion");
         entity.defaultTokenPrice = pricingService.normalizeNullablePrice(defaultTokenPrice);
         Map<String, Object> newState = modelState(entity);
 
@@ -411,7 +419,9 @@ public class ManagementService {
     @Transactional
     public CustomerModelPricingEntity upsertCustomerPricing(String modelId,
                                                             String customerId,
+                                                            Integer timeCriterionSeconds,
                                                             BigDecimal timePrice,
+                                                            Integer tokenCriterion,
                                                             BigDecimal tokenPrice,
                                                             ChangeAuditContext context) {
         enforceTwoPersonRuleIfRequired(context);
@@ -427,11 +437,15 @@ public class ManagementService {
             entity.id = UUID.randomUUID();
             entity.customerId = normalizedCustomerId;
             entity.modelId = normalizedModelId;
-            customerModelPricingRepository.persist(entity);
         }
+        entity.timeCriterionSeconds = pricingService.normalizeCriterion(timeCriterionSeconds, "customer-model time criterion");
         entity.timePrice = pricingService.normalizePrice(timePrice, "customer-model time price");
+        entity.tokenCriterion = pricingService.normalizeCriterion(tokenCriterion, "customer-model token criterion");
         entity.tokenPrice = pricingService.normalizePrice(tokenPrice, "customer-model token price");
         entity.updatedAt = Instant.now();
+        if (!customerModelPricingRepository.isPersistent(entity)) {
+            customerModelPricingRepository.persist(entity);
+        }
 
         auditManagementChange("CUSTOMER_MODEL_PRICING_UPSERTED", "customer_model_pricing", normalizedCustomerId + ":" + normalizedModelId, context, oldState, customerPricingState(entity));
         return entity;
@@ -573,7 +587,9 @@ public class ManagementService {
                 "display_name", entity.displayName,
                 "provider", entity.provider,
                 "active", entity.active,
+                "default_time_criterion_seconds", entity.defaultTimeCriterionSeconds,
                 "default_time_price", entity.defaultTimePrice,
+                "default_token_criterion", entity.defaultTokenCriterion,
                 "default_token_price", entity.defaultTokenPrice
         );
     }
@@ -603,7 +619,9 @@ public class ManagementService {
         return auditLogService.payloadOf(
                 "customer_id", entity.customerId,
                 "model_id", entity.modelId,
+                "time_criterion_seconds", entity.timeCriterionSeconds,
                 "time_price", entity.timePrice,
+                "token_criterion", entity.tokenCriterion,
                 "token_price", entity.tokenPrice,
                 "updated_at", entity.updatedAt
         );

@@ -25,8 +25,14 @@ public class CustomerModelPricingEntity extends PanacheEntityBase {
     @Column(name = "model_id", nullable = false)
     public String modelId;
 
+    @Column(name = "time_criterion_seconds", nullable = false)
+    public int timeCriterionSeconds;
+
     @Column(name = "time_price", nullable = false)
     public BigDecimal timePrice;
+
+    @Column(name = "token_criterion", nullable = false)
+    public int tokenCriterion;
 
     @Column(name = "token_price", nullable = false)
     public BigDecimal tokenPrice;
