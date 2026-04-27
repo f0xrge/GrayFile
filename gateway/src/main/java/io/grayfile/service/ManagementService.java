@@ -427,11 +427,13 @@ public class ManagementService {
             entity.id = UUID.randomUUID();
             entity.customerId = normalizedCustomerId;
             entity.modelId = normalizedModelId;
-            customerModelPricingRepository.persist(entity);
         }
         entity.timePrice = pricingService.normalizePrice(timePrice, "customer-model time price");
         entity.tokenPrice = pricingService.normalizePrice(tokenPrice, "customer-model token price");
         entity.updatedAt = Instant.now();
+        if (oldState.isEmpty()) {
+            customerModelPricingRepository.persist(entity);
+        }
 
         auditManagementChange("CUSTOMER_MODEL_PRICING_UPSERTED", "customer_model_pricing", normalizedCustomerId + ":" + normalizedModelId, context, oldState, customerPricingState(entity));
         return entity;

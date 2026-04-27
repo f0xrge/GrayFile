@@ -63,15 +63,20 @@ class ManagementResourceTest {
     @BeforeEach
     void cleanDatabase() throws Exception {
         userTransaction.begin();
-        billingWindowRepository.deleteAll();
-        usageEventRepository.deleteAll();
-        auditLogRepository.deleteAll();
-        auditExportStateRepository.deleteAll();
-        customerModelPricingRepository.deleteAll();
-        apiKeyRepository.deleteAll();
-        llmModelRepository.deleteAll();
-        customerRepository.deleteAll();
-        userTransaction.commit();
+        try {
+            billingWindowRepository.deleteAll();
+            usageEventRepository.deleteAll();
+            auditLogRepository.deleteAll();
+            auditExportStateRepository.deleteAll();
+            customerModelPricingRepository.deleteAll();
+            apiKeyRepository.deleteAll();
+            llmModelRepository.deleteAll();
+            customerRepository.deleteAll();
+            userTransaction.commit();
+        } catch (Exception exception) {
+            userTransaction.rollback();
+            throw exception;
+        }
     }
 
     @Test
