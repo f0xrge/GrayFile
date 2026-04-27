@@ -23,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.math.BigDecimal;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
@@ -76,37 +77,44 @@ class LlmProxyResourceTest {
     void cleanAndSeedDatabase() throws Exception {
         reset(backendGateway);
         userTransaction.begin();
-        billingWindowRepository.deleteAll();
-        usageEventRepository.deleteAll();
-        auditLogRepository.deleteAll();
-        auditExportStateRepository.deleteAll();
-        modelRouteRepository.deleteAll();
-        apiKeyRepository.deleteAll();
-        llmModelRepository.deleteAll();
-        customerRepository.deleteAll();
+        try {
+            billingWindowRepository.deleteAll();
+            usageEventRepository.deleteAll();
+            auditLogRepository.deleteAll();
+            auditExportStateRepository.deleteAll();
+            modelRouteRepository.deleteAll();
+            apiKeyRepository.deleteAll();
+            llmModelRepository.deleteAll();
+            customerRepository.deleteAll();
 
-        CustomerEntity customer = new CustomerEntity();
-        customer.id = "customer-1";
-        customer.name = "Acme";
-        customer.active = true;
-        customerRepository.persist(customer);
+            CustomerEntity customer = new CustomerEntity();
+            customer.id = "customer-1";
+            customer.name = "Acme";
+            customer.active = true;
+            customerRepository.persist(customer);
 
-        LlmModelEntity model = new LlmModelEntity();
-        model.id = "gpt-4o-mini";
-        model.displayName = "GPT-4o Mini";
-        model.provider = "openai";
-        model.active = true;
-        llmModelRepository.persist(model);
+            LlmModelEntity model = new LlmModelEntity();
+            model.id = "gpt-4o-mini";
+            model.displayName = "GPT-4o Mini";
+            model.provider = "openai";
+            model.active = true;
+            model.defaultTimePrice = BigDecimal.ZERO.setScale(6);
+            model.defaultTokenPrice = BigDecimal.ZERO.setScale(6);
+            llmModelRepository.persist(model);
 
-        ApiKeyEntity apiKey = new ApiKeyEntity();
-        apiKey.id = "key-1";
-        apiKey.customerId = "customer-1";
-        apiKey.name = "Primary";
-        apiKey.active = true;
-        apiKeyRepository.persist(apiKey);
+            ApiKeyEntity apiKey = new ApiKeyEntity();
+            apiKey.id = "key-1";
+            apiKey.customerId = "customer-1";
+            apiKey.name = "Primary";
+            apiKey.active = true;
+            apiKeyRepository.persist(apiKey);
 
-        persistRoute("gpt-4o-mini", "backend-a", "http://backend-a:18080", 100, true);
-        userTransaction.commit();
+            persistRoute("gpt-4o-mini", "backend-a", "http://backend-a:18080", 100, true);
+            userTransaction.commit();
+        } catch (Exception exception) {
+            userTransaction.rollback();
+            throw exception;
+        }
     }
 
     @Test
