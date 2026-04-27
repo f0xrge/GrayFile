@@ -111,7 +111,7 @@ class LlmProxyResourceTest {
 
     @Test
     void shouldAcceptKnownScopeAndPersistUsage() throws Exception {
-        when(backendGateway.chatCompletions(anyString(), anyString(), any(), any())).thenReturn(Response.ok(
+        when(backendGateway.proxy(anyString(), any())).thenReturn(Response.ok(
                 objectMapper.readTree("""
                         {
                           "id": "resp-1",
@@ -155,7 +155,7 @@ class LlmProxyResourceTest {
 
     @Test
     void shouldFlagDivergenceBetweenEdgeExtractionAndBackendPayload() throws Exception {
-        when(backendGateway.chatCompletions(anyString(), anyString(), any(), any())).thenReturn(Response.ok(
+        when(backendGateway.proxy(anyString(), any())).thenReturn(Response.ok(
                 objectMapper.readTree("""
                         {
                           "id": "resp-divergence",
@@ -196,11 +196,11 @@ class LlmProxyResourceTest {
         persistRoute("gpt-4o-mini", "backend-b", "http://backend-b:18080", 1, true);
         userTransaction.commit();
 
-        when(backendGateway.chatCompletions(eq("http://backend-a:18080"), eq("req-2"), any(), any()))
+        when(backendGateway.proxy(eq("http://backend-a:18080"), any()))
                 .thenReturn(Response.serverError().entity(objectMapper.readTree("""
                         {"error":"boom"}
                         """)).build());
-        when(backendGateway.chatCompletions(eq("http://backend-b:18080"), eq("req-2"), any(), any()))
+        when(backendGateway.proxy(eq("http://backend-b:18080"), any()))
                 .thenReturn(Response.ok(objectMapper.readTree("""
                         {"id":"resp-2","model":"gpt-4o-mini","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
                         """)).build());
@@ -220,7 +220,7 @@ class LlmProxyResourceTest {
 
     @Test
     void shouldWriteUsageExtractionAuditWhenUsageFieldsAreMissing() throws Exception {
-        when(backendGateway.chatCompletions(anyString(), anyString(), any(), any())).thenReturn(Response.ok(
+        when(backendGateway.proxy(anyString(), any())).thenReturn(Response.ok(
                 objectMapper.readTree("""
                         {
                           "id": "resp-no-usage",
