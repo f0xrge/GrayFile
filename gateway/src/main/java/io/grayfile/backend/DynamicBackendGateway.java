@@ -1,8 +1,7 @@
 package io.grayfile.backend;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.annotation.PreDestroy;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.client.Client;
 import jakarta.ws.rs.client.ClientBuilder;
 import jakarta.ws.rs.client.Entity;
@@ -18,18 +17,22 @@ public class DynamicBackendGateway implements BackendGateway {
     private final Map<String, Client> clientsByBaseUrl = new ConcurrentHashMap<>();
 
     @Override
-    public Response chatCompletions(String baseUrl, String requestId, String traceparent, JsonNode requestBody) {
+    public Response proxy(String baseUrl, OpenAiRequestContext requestContext) {
         Client client = clientsByBaseUrl.computeIfAbsent(baseUrl, ignored -> ClientBuilder.newBuilder().build());
         var request = client.target(baseUrl)
-                .path("/v1/chat/completions")
-                .request(MediaType.APPLICATION_JSON_TYPE)
-                .header("x-request-id", requestId);
+                .path(requestContext.endpoint().path())
+                .request(MediaType.WILDCARD_TYPE)
+                .header("x-request-id", requestContext.requestId());
 
-        if (traceparent != null && !traceparent.isBlank()) {
-            request.header("traceparent", traceparent);
+        if (requestContext.traceparent() != null && !requestContext.traceparent().isBlank()) {
+            request.header("traceparent", requestContext.traceparent());
         }
 
-        return request.post(Entity.entity(requestBody, MediaType.APPLICATION_JSON_TYPE));
+        return switch (requestContext.httpMethod().toUpperCase()) {
+            case "GET" -> request.get();
+            case "POST" -> request.post(Entity.entity(requestContext.requestBody(), MediaType.APPLICATION_JSON_TYPE));
+            default -> throw new IllegalArgumentException("unsupported http method: " + requestContext.httpMethod());
+        };
     }
 
     @PreDestroy
