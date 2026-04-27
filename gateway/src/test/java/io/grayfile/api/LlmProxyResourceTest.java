@@ -14,6 +14,7 @@ import io.grayfile.persistence.CustomerRepository;
 import io.grayfile.persistence.LlmModelRepository;
 import io.grayfile.persistence.ModelRouteRepository;
 import io.grayfile.persistence.UsageEventRepository;
+import io.grayfile.service.ModelRoutingService;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -72,6 +73,9 @@ class LlmProxyResourceTest {
 
     @Inject
     UserTransaction userTransaction;
+
+    @Inject
+    ModelRoutingService modelRoutingService;
 
     @BeforeEach
     void cleanAndSeedDatabase() throws Exception {
@@ -203,6 +207,7 @@ class LlmProxyResourceTest {
         userTransaction.begin();
         persistRoute("gpt-4o-mini", "backend-b", "http://backend-b:18080", 1, true);
         userTransaction.commit();
+        modelRoutingService.invalidateModel("gpt-4o-mini");
 
         when(backendGateway.chatCompletions(eq("http://backend-a:18080"), eq("req-2"), any(), any()))
                 .thenReturn(Response.serverError().entity(objectMapper.readTree("""
