@@ -13,3 +13,4 @@ management-ui/.npm-cache-*/
 management-ui/.tmp/
 **/target-codex/
 *.pptx
+**/.npm
