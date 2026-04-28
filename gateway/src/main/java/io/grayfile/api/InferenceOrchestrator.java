@@ -9,7 +9,6 @@ import io.grayfile.service.AuditLogService;
 import io.grayfile.service.ManagementService;
 import io.grayfile.service.ModelRoutingService;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
@@ -230,57 +229,22 @@ public class InferenceOrchestrator {
     private record ResponseEnvelope(byte[] rawPayload, String contentType, JsonNode jsonPayload) {
 
         static ResponseEnvelope from(Response backendResponse, ObjectMapper objectMapper) {
+            byte[] body = backendResponse.hasEntity() ? backendResponse.readEntity(byte[].class) : new byte[0];
             String contentType = MediaType.APPLICATION_JSON;
             MediaType mediaType = backendResponse.getMediaType();
             if (mediaType != null) {
                 contentType = mediaType.toString();
             }
 
-            byte[] body = new byte[0];
             JsonNode json = null;
-
-            if (backendResponse.hasEntity()) {
-                Object entity = backendResponse.getEntity();
-                if (entity instanceof byte[] bytes) {
-                    body = bytes;
-                } else if (entity instanceof JsonNode jsonNode) {
-                    json = jsonNode;
-                    body = toBytes(objectMapper, jsonNode);
-                } else {
-                    try {
-                        body = backendResponse.readEntity(byte[].class);
-                    } catch (ProcessingException ignored) {
-                        try {
-                            json = backendResponse.readEntity(JsonNode.class);
-                            body = toBytes(objectMapper, json);
-                        } catch (Exception ignoredAgain) {
-                            body = new byte[0];
-                        }
-                    }
+            if (contentType.toLowerCase().contains("json") && body.length > 0) {
+                try {
+                    json = objectMapper.readTree(body);
+                } catch (IOException ignored) {
+                    json = null;
                 }
             }
-
-            if (json == null && contentType.toLowerCase().contains("json") && body.length > 0) {
-                json = parseJson(objectMapper, body);
-            }
-
             return new ResponseEnvelope(body, contentType, json);
-        }
-
-        private static JsonNode parseJson(ObjectMapper objectMapper, byte[] body) {
-            try {
-                return objectMapper.readTree(body);
-            } catch (IOException ignored) {
-                return null;
-            }
-        }
-
-        private static byte[] toBytes(ObjectMapper objectMapper, JsonNode jsonNode) {
-            try {
-                return objectMapper.writeValueAsBytes(jsonNode);
-            } catch (IOException ignored) {
-                return new byte[0];
-            }
         }
     }
 }
