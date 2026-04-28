@@ -64,7 +64,7 @@ class BillingServiceTest {
     @BeforeEach
     void setUp() {
         lenient().when(pricingService.resolveEffectivePricing(anyString(), anyString()))
-                .thenReturn(new PricingService.EffectivePricing(BigDecimal.ZERO.setScale(6), BigDecimal.ZERO.setScale(6), "model-default"));
+                .thenReturn(new PricingService.EffectivePricing(1, BigDecimal.ZERO.setScale(6), 1000, BigDecimal.ZERO.setScale(6), "model-default"));
         lenient().when(pricingService.calculateCost(any(), anyLong(), anyString(), any()))
                 .thenReturn(new PricingService.CostBreakdown(BigDecimal.ZERO.setScale(6), BigDecimal.ZERO.setScale(6), BigDecimal.ZERO.setScale(6)));
         billingService = new BillingService(usageEventRepository, billingWindowRepository, billingMetrics, auditLogService, pricingService);

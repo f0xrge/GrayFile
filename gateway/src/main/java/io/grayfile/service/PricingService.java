@@ -13,6 +13,9 @@ import java.math.RoundingMode;
 @ApplicationScoped
 public class PricingService {
 
+    public static final int DEFAULT_TIME_CRITERION_SECONDS = 1;
+    public static final int DEFAULT_TOKEN_CRITERION = 1000;
+
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(6, RoundingMode.HALF_UP);
     private static final BigDecimal MILLIS_PER_SECOND = BigDecimal.valueOf(1000);
 
@@ -40,9 +43,9 @@ public class PricingService {
         LlmModelEntity model = llmModelRepository.findByIdOptional(modelId)
                 .orElseThrow(() -> new NotFoundException("model not found: " + modelId));
         return new EffectivePricing(
-                normalizeCriterion(model.defaultTimeCriterionSeconds, "model-default time criterion"),
+                normalizeDefaultCriterion(model.defaultTimeCriterionSeconds, DEFAULT_TIME_CRITERION_SECONDS),
                 normalizeNullablePrice(model.defaultTimePrice),
-                normalizeCriterion(model.defaultTokenCriterion, "model-default token criterion"),
+                normalizeDefaultCriterion(model.defaultTokenCriterion, DEFAULT_TOKEN_CRITERION),
                 normalizeNullablePrice(model.defaultTokenPrice),
                 "model-default"
         );
@@ -59,15 +62,20 @@ public class PricingService {
         BigDecimal durationSeconds = BigDecimal.valueOf(Math.max(durationMs, 0))
                 .divide(MILLIS_PER_SECOND, 6, RoundingMode.HALF_UP);
         BigDecimal normalizedUnits = billableUnitCount == null ? ZERO : billableUnitCount.max(BigDecimal.ZERO).setScale(6, RoundingMode.HALF_UP);
-        BigDecimal billablePriceUnits = "tokens".equalsIgnoreCase(billableUnitType)
-                ? normalizedUnits.divide(TOKENS_PER_UNIT, 6, RoundingMode.HALF_UP)
-                : normalizedUnits;
 
-        BigDecimal timeCost = pricing.timePricePerSecond().multiply(durationSeconds).setScale(6, RoundingMode.HALF_UP);
-        BigDecimal tokenCost = pricing.tokenPricePerThousandTokens().multiply(billablePriceUnits).setScale(6, RoundingMode.HALF_UP);
+        BigDecimal timeCost = pricing.timePrice()
+                .multiply(durationSeconds)
+                .divide(BigDecimal.valueOf(pricing.timeCriterionSeconds()), 6, RoundingMode.HALF_UP);
+        BigDecimal tokenCost = pricing.tokenPrice()
+                .multiply(normalizedUnits)
+                .divide(BigDecimal.valueOf(pricing.tokenCriterion()), 6, RoundingMode.HALF_UP);
         BigDecimal totalCost = timeCost.add(tokenCost).setScale(6, RoundingMode.HALF_UP);
 
-        return new CostBreakdown(timeCost, tokenCost, totalCost);
+        return new CostBreakdown(
+                timeCost.setScale(6, RoundingMode.HALF_UP),
+                tokenCost.setScale(6, RoundingMode.HALF_UP),
+                totalCost
+        );
     }
 
     public int normalizeCriterion(Integer value, String label) {
@@ -76,6 +84,13 @@ public class PricingService {
         }
         if (value <= 0) {
             throw new IllegalArgumentException(label + " must be > 0");
+        }
+        return value;
+    }
+
+    public int normalizeDefaultCriterion(Integer value, int defaultValue) {
+        if (value == null || value <= 0) {
+            return defaultValue;
         }
         return value;
     }

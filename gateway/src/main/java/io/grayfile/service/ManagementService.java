@@ -166,9 +166,9 @@ public class ManagementService {
         entity.displayName = normalizeDisplayText(displayName, "model display name", 120);
         entity.provider = normalizeIdentifier(provider, "model provider");
         entity.active = active == null || active;
-        entity.defaultTimeCriterionSeconds = pricingService.normalizeCriterion(defaultTimeCriterionSeconds, "model-default time criterion");
+        entity.defaultTimeCriterionSeconds = pricingService.normalizeDefaultCriterion(defaultTimeCriterionSeconds, PricingService.DEFAULT_TIME_CRITERION_SECONDS);
         entity.defaultTimePrice = pricingService.normalizeNullablePrice(defaultTimePrice);
-        entity.defaultTokenCriterion = pricingService.normalizeCriterion(defaultTokenCriterion, "model-default token criterion");
+        entity.defaultTokenCriterion = pricingService.normalizeDefaultCriterion(defaultTokenCriterion, PricingService.DEFAULT_TOKEN_CRITERION);
         entity.defaultTokenPrice = pricingService.normalizeNullablePrice(defaultTokenPrice);
         llmModelRepository.persist(entity);
 
@@ -195,9 +195,9 @@ public class ManagementService {
         entity.displayName = normalizeDisplayText(displayName, "model display name", 120);
         entity.provider = normalizeIdentifier(provider, "model provider");
         entity.active = active == null || active;
-        entity.defaultTimeCriterionSeconds = pricingService.normalizeCriterion(defaultTimeCriterionSeconds, "model-default time criterion");
+        entity.defaultTimeCriterionSeconds = pricingService.normalizeDefaultCriterion(defaultTimeCriterionSeconds, PricingService.DEFAULT_TIME_CRITERION_SECONDS);
         entity.defaultTimePrice = pricingService.normalizeNullablePrice(defaultTimePrice);
-        entity.defaultTokenCriterion = pricingService.normalizeCriterion(defaultTokenCriterion, "model-default token criterion");
+        entity.defaultTokenCriterion = pricingService.normalizeDefaultCriterion(defaultTokenCriterion, PricingService.DEFAULT_TOKEN_CRITERION);
         entity.defaultTokenPrice = pricingService.normalizeNullablePrice(defaultTokenPrice);
         Map<String, Object> newState = modelState(entity);
 

@@ -58,7 +58,9 @@ class BillingServiceReplayTest {
             model.displayName = "GPT-4o Mini";
             model.provider = "openai";
             model.active = true;
+            model.defaultTimeCriterionSeconds = 1;
             model.defaultTimePrice = BigDecimal.ZERO.setScale(6);
+            model.defaultTokenCriterion = 1000;
             model.defaultTokenPrice = BigDecimal.ZERO.setScale(6);
             llmModelRepository.persist(model);
             userTransaction.commit();

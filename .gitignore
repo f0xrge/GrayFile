@@ -7,6 +7,7 @@
 management-ui/.angular/
 management-ui/dist/
 management-ui/node_modules/
+management-ui/out-tsc/
 management-ui/.corepack/
 management-ui/.npm-cache/
 management-ui/.npm-cache-*/

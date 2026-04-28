@@ -91,8 +91,10 @@ public class BillingService implements BillingUsageHandler {
                 usageEvent.billableUnitType,
                 usageEvent.billableUnitCount
         );
-        usageEvent.billedTimePrice = pricing.timePricePerSecond();
-        usageEvent.billedTokenPrice = pricing.tokenPricePerThousandTokens();
+        usageEvent.billedTimeCriterionSeconds = pricing.timeCriterionSeconds();
+        usageEvent.billedTimePrice = pricing.timePrice();
+        usageEvent.billedTokenCriterion = pricing.tokenCriterion();
+        usageEvent.billedTokenPrice = pricing.tokenPrice();
         usageEvent.timeCost = costBreakdown.timeCost();
         usageEvent.tokenCost = costBreakdown.tokenCost();
         usageEvent.totalCost = costBreakdown.totalCost();
