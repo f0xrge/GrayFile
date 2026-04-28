@@ -46,13 +46,22 @@ public class PricingService {
     }
 
     public CostBreakdown calculateCost(EffectivePricing pricing, long durationMs, int totalTokens) {
+        return calculateCost(pricing, durationMs, "tokens", BigDecimal.valueOf(totalTokens));
+    }
+
+    public CostBreakdown calculateCost(EffectivePricing pricing,
+                                       long durationMs,
+                                       String billableUnitType,
+                                       BigDecimal billableUnitCount) {
         BigDecimal durationSeconds = BigDecimal.valueOf(Math.max(durationMs, 0))
                 .divide(MILLIS_PER_SECOND, 6, RoundingMode.HALF_UP);
-        BigDecimal tokenUnits = BigDecimal.valueOf(Math.max(totalTokens, 0))
-                .divide(TOKENS_PER_UNIT, 6, RoundingMode.HALF_UP);
+        BigDecimal normalizedUnits = billableUnitCount == null ? ZERO : billableUnitCount.max(BigDecimal.ZERO).setScale(6, RoundingMode.HALF_UP);
+        BigDecimal billablePriceUnits = "tokens".equalsIgnoreCase(billableUnitType)
+                ? normalizedUnits.divide(TOKENS_PER_UNIT, 6, RoundingMode.HALF_UP)
+                : normalizedUnits;
 
         BigDecimal timeCost = pricing.timePricePerSecond().multiply(durationSeconds).setScale(6, RoundingMode.HALF_UP);
-        BigDecimal tokenCost = pricing.tokenPricePerThousandTokens().multiply(tokenUnits).setScale(6, RoundingMode.HALF_UP);
+        BigDecimal tokenCost = pricing.tokenPricePerThousandTokens().multiply(billablePriceUnits).setScale(6, RoundingMode.HALF_UP);
         BigDecimal totalCost = timeCost.add(tokenCost).setScale(6, RoundingMode.HALF_UP);
 
         return new CostBreakdown(timeCost, tokenCost, totalCost);

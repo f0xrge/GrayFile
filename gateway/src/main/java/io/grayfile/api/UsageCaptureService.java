@@ -12,6 +12,7 @@ import org.jboss.logging.Logger;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 @ApplicationScoped
@@ -99,6 +100,11 @@ public class UsageCaptureService {
         );
 
         String signature = contract.signature(usageSigningKey);
+        String resolvedEndpointType = extraction.endpointType() == null
+                ? endpoint.name().toLowerCase(Locale.ROOT)
+                : extraction.endpointType();
+        String billableUnitType = resolveBillableUnitType(endpoint, extraction);
+        double billableUnitCount = resolveBillableUnitCount(extraction, totalTokens);
         billingUsageHandler.handleUsage(
                 customerId,
                 apiKeyId,
@@ -108,6 +114,10 @@ public class UsageCaptureService {
                 inputTokens == null ? 0 : inputTokens,
                 outputTokens == null ? 0 : outputTokens,
                 totalTokens == null ? 0 : totalTokens,
+                resolvedEndpointType,
+                billableUnitType,
+                billableUnitCount,
+                payload.toString(),
                 contract.contractVersion(),
                 extractorVersion,
                 signature,
@@ -192,5 +202,27 @@ public class UsageCaptureService {
             }
             return inputTokens != input || outputTokens != output || totalTokens != total;
         }
+    }
+
+    private String resolveBillableUnitType(OpenAiEndpoint endpoint, UsageExtractor.ExtractionResult extraction) {
+        if (extraction.hasTokenUsage()) {
+            return "tokens";
+        }
+        return switch (endpoint) {
+            case AUDIO_TRANSCRIPTIONS, AUDIO_TRANSLATIONS, AUDIO_SPEECH -> "audio_seconds";
+            case IMAGE_GENERATIONS -> "images";
+            case MODERATIONS -> "requests";
+            default -> "requests";
+        };
+    }
+
+    private double resolveBillableUnitCount(UsageExtractor.ExtractionResult extraction, Integer totalTokens) {
+        if (extraction.billableUnits() != null) {
+            return Math.max(extraction.billableUnits(), 0D);
+        }
+        if (extraction.hasTokenUsage() && totalTokens != null) {
+            return Math.max(totalTokens, 0);
+        }
+        return 1D;
     }
 }
