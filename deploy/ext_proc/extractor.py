@@ -38,5 +38,35 @@ def extract_usage(payload: bytes) -> ExtractionResult:
 
 def extract_usage_from_chunks(chunks: list[bytes], end_of_stream: bool) -> ExtractionResult:
     if not end_of_stream:
-        return ExtractionResult(status="incomplete_payload")
-    return extract_usage(b"".join(chunks))
+        return ExtractionResult(status="incomplete_stream")
+
+    payload = b"".join(chunks)
+    text = payload.decode("utf-8", errors="ignore")
+    if _looks_like_sse_payload(text):
+        return _extract_usage_from_sse(text)
+    return extract_usage(payload)
+
+
+def _looks_like_sse_payload(payload_text: str) -> bool:
+    return "data:" in payload_text and "[DONE]" in payload_text
+
+
+def _extract_usage_from_sse(payload_text: str) -> ExtractionResult:
+    usage_candidate: Optional[ExtractionResult] = None
+    for raw_line in payload_text.splitlines():
+        line = raw_line.strip()
+        if not line.startswith("data:"):
+            continue
+
+        data = line[5:].strip()
+        if not data or data == "[DONE]":
+            continue
+
+        extraction = extract_usage(data.encode("utf-8"))
+        if extraction.status == "ok":
+            usage_candidate = extraction
+
+    if usage_candidate is None:
+        return ExtractionResult(status="stream_final_missing_usage")
+
+    return usage_candidate

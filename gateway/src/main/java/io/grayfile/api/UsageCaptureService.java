@@ -135,6 +135,13 @@ public class UsageCaptureService {
         }
     }
 
+    public void auditSkippedExtraction(String reason,
+                                       String requestId,
+                                       String model,
+                                       OpenAiEndpoint endpoint) {
+        logExtractionAudit(reason, requestId, model, endpoint, null, null);
+    }
+
     private void logExtractionAudit(String reason,
                                     String requestId,
                                     String model,
