@@ -78,9 +78,6 @@ class LlmProxyResourceTest {
     @Inject
     UserTransaction userTransaction;
 
-    @Inject
-    ModelRoutingService modelRoutingService;
-
     @BeforeEach
     void cleanAndSeedDatabase() throws Exception {
         reset(backendGateway);
