@@ -11,26 +11,32 @@ import javax.crypto.spec.SecretKeySpec;
 public record UsageExtractionContract(String contractVersion,
                                       String requestId,
                                       String model,
-                                      int promptTokens,
-                                      int completionTokens,
-                                      int totalTokens,
+                                      Integer inputTokens,
+                                      Integer outputTokens,
+                                      Integer totalTokens,
+                                      Double billableUnits,
+                                      String endpointType,
                                       String extractorVersion) {
 
-    public static final String CONTRACT_VERSION_V1 = "usage_extraction.v1";
+    public static final String CONTRACT_VERSION_V2 = "usage_extraction.v2";
 
     public static UsageExtractionContract of(String requestId,
                                              String model,
-                                             int promptTokens,
-                                             int completionTokens,
-                                             int totalTokens,
+                                             Integer inputTokens,
+                                             Integer outputTokens,
+                                             Integer totalTokens,
+                                             Double billableUnits,
+                                             String endpointType,
                                              String extractorVersion) {
         return new UsageExtractionContract(
-                CONTRACT_VERSION_V1,
+                CONTRACT_VERSION_V2,
                 requestId,
                 model,
-                promptTokens,
-                completionTokens,
+                inputTokens,
+                outputTokens,
                 totalTokens,
+                billableUnits,
+                endpointType,
                 extractorVersion
         );
     }
@@ -40,9 +46,11 @@ public record UsageExtractionContract(String contractVersion,
         payload.put("contract_version", contractVersion);
         payload.put("request_id", requestId);
         payload.put("model", model);
-        payload.put("prompt_tokens", promptTokens);
-        payload.put("completion_tokens", completionTokens);
+        payload.put("input_tokens", inputTokens);
+        payload.put("output_tokens", outputTokens);
         payload.put("total_tokens", totalTokens);
+        payload.put("billable_units", billableUnits);
+        payload.put("endpoint_type", endpointType);
         payload.put("extractor_version", extractorVersion);
         return payload;
     }
@@ -63,11 +71,17 @@ public record UsageExtractionContract(String contractVersion,
                 .add("contract_version=" + contractVersion)
                 .add("request_id=" + requestId)
                 .add("model=" + model)
-                .add("prompt_tokens=" + promptTokens)
-                .add("completion_tokens=" + completionTokens)
-                .add("total_tokens=" + totalTokens)
+                .add("input_tokens=" + normalizeNullable(inputTokens))
+                .add("output_tokens=" + normalizeNullable(outputTokens))
+                .add("total_tokens=" + normalizeNullable(totalTokens))
+                .add("billable_units=" + normalizeNullable(billableUnits))
+                .add("endpoint_type=" + normalizeNullable(endpointType))
                 .add("extractor_version=" + extractorVersion)
                 .toString();
+    }
+
+    private String normalizeNullable(Object value) {
+        return value == null ? "" : String.valueOf(value);
     }
 
     private String toHex(byte[] bytes) {

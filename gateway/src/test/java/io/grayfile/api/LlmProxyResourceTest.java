@@ -161,13 +161,15 @@ class LlmProxyResourceTest {
                 .body("usage.total_tokens", equalTo(20))
                 .header("x-request-id", equalTo("req-1"))
                 .header("x-backend-id", equalTo("backend-a"))
-                .header("x-grayfile-usage-contract-version", equalTo("usage_extraction.v1"))
+                .header("x-grayfile-usage-contract-version", equalTo("usage_extraction.v2"))
                 .header("x-grayfile-usage-extractor-version", equalTo("gateway-backend-payload-v1"));
 
         assertEquals(1L, usageEventRepository.count());
         assertEquals(1L, billingWindowRepository.count());
         assertEquals(20, billingWindowRepository.listAll().getFirst().tokenTotal);
     }
+
+
 
 
     @Test
