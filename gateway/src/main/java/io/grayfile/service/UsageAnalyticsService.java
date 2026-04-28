@@ -27,7 +27,8 @@ public class UsageAnalyticsService {
                 toSummary(summary),
                 usageEventRepository.aggregateByCustomer(customerId, modelId, startFrom, endTo, normalizedLimit).stream().map(this::toBreakdown).toList(),
                 usageEventRepository.aggregateByModel(customerId, modelId, startFrom, endTo, normalizedLimit).stream().map(this::toBreakdown).toList(),
-                usageEventRepository.aggregateByCustomerAndModel(customerId, modelId, startFrom, endTo, normalizedLimit).stream().map(this::toBreakdown).toList()
+                usageEventRepository.aggregateByCustomerAndModel(customerId, modelId, startFrom, endTo, normalizedLimit).stream().map(this::toBreakdown).toList(),
+                usageEventRepository.aggregateByEndpointAndUnit(customerId, modelId, startFrom, endTo, normalizedLimit).stream().map(this::toBreakdown).toList()
         );
     }
 
@@ -38,6 +39,7 @@ public class UsageAnalyticsService {
                 aggregate.promptTokens(),
                 aggregate.completionTokens(),
                 aggregate.totalTokens(),
+                aggregate.billableUnitCount(),
                 aggregate.timeCost(),
                 aggregate.tokenCost(),
                 aggregate.totalCost()
@@ -48,11 +50,14 @@ public class UsageAnalyticsService {
         return new UsageBreakdown(
                 aggregate.customerId(),
                 aggregate.modelId(),
+                aggregate.endpointType(),
+                aggregate.billableUnitType(),
                 aggregate.requestCount(),
                 aggregate.durationMs(),
                 aggregate.promptTokens(),
                 aggregate.completionTokens(),
                 aggregate.totalTokens(),
+                aggregate.billableUnitCount(),
                 aggregate.timeCost(),
                 aggregate.tokenCost(),
                 aggregate.totalCost()
@@ -62,7 +67,8 @@ public class UsageAnalyticsService {
     public record UsageAnalyticsResponse(UsageSummary summary,
                                          List<UsageBreakdown> byCustomer,
                                          List<UsageBreakdown> byModel,
-                                         List<UsageBreakdown> byCustomerModel) {
+                                         List<UsageBreakdown> byCustomerModel,
+                                         List<UsageBreakdown> byEndpointUnit) {
     }
 
     public record UsageSummary(long requestCount,
@@ -70,6 +76,7 @@ public class UsageAnalyticsService {
                                long promptTokens,
                                long completionTokens,
                                long totalTokens,
+                               BigDecimal billableUnitCount,
                                BigDecimal timeCost,
                                BigDecimal tokenCost,
                                BigDecimal totalCost) {
@@ -77,11 +84,14 @@ public class UsageAnalyticsService {
 
     public record UsageBreakdown(String customerId,
                                  String modelId,
+                                 String endpointType,
+                                 String billableUnitType,
                                  long requestCount,
                                  long durationMs,
                                  long promptTokens,
                                  long completionTokens,
                                  long totalTokens,
+                                 BigDecimal billableUnitCount,
                                  BigDecimal timeCost,
                                  BigDecimal tokenCost,
                                  BigDecimal totalCost) {

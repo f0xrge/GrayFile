@@ -12,6 +12,7 @@ import jakarta.transaction.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -49,6 +50,10 @@ public class BillingService implements BillingUsageHandler {
                             int promptTokens,
                             int completionTokens,
                             int totalTokens,
+                            String endpointType,
+                            String billableUnitType,
+                            double billableUnitCount,
+                            String usageRaw,
                             String contractVersion,
                             String extractorVersion,
                             String usageSignature,
@@ -68,12 +73,24 @@ public class BillingService implements BillingUsageHandler {
         usageEvent.durationMs = Math.max(durationMs, 0);
         usageEvent.promptTokens = promptTokens;
         usageEvent.completionTokens = completionTokens;
-        usageEvent.totalTokens = totalTokens;
+        usageEvent.inputTokens = promptTokens;
+        usageEvent.outputTokens = completionTokens;
+        int derivedTotalTokens = totalTokens > 0 ? totalTokens : Math.max(promptTokens, 0) + Math.max(completionTokens, 0);
+        usageEvent.totalTokens = Math.max(derivedTotalTokens, 0);
+        usageEvent.endpointType = endpointType;
+        usageEvent.billableUnitType = billableUnitType;
+        usageEvent.billableUnitCount = BigDecimal.valueOf(Math.max(billableUnitCount, 0D)).setScale(6);
+        usageEvent.usageRaw = usageRaw;
         usageEvent.contractVersion = contractVersion;
         usageEvent.extractorVersion = extractorVersion;
         usageEvent.usageSignature = usageSignature;
         PricingService.EffectivePricing pricing = pricingService.resolveEffectivePricing(customerId, model);
-        PricingService.CostBreakdown costBreakdown = pricingService.calculateCost(pricing, usageEvent.durationMs, totalTokens);
+        PricingService.CostBreakdown costBreakdown = pricingService.calculateCost(
+                pricing,
+                usageEvent.durationMs,
+                usageEvent.billableUnitType,
+                usageEvent.billableUnitCount
+        );
         usageEvent.billedTimePrice = pricing.timePricePerSecond();
         usageEvent.billedTokenPrice = pricing.tokenPricePerThousandTokens();
         usageEvent.timeCost = costBreakdown.timeCost();
@@ -92,7 +109,7 @@ public class BillingService implements BillingUsageHandler {
             throw exception;
         }
 
-        billingMetrics.recordUsageEvent(totalTokens);
+        billingMetrics.recordUsageEvent(usageEvent.totalTokens);
         auditLogService.logEvent(
                 "BILLING_USAGE_INGESTED",
                 "billing-service",
@@ -106,7 +123,10 @@ public class BillingService implements BillingUsageHandler {
                         "duration_ms", usageEvent.durationMs,
                         "prompt_tokens", promptTokens,
                         "completion_tokens", completionTokens,
-                        "total_tokens", totalTokens,
+                        "total_tokens", usageEvent.totalTokens,
+                        "endpoint_type", endpointType,
+                        "billable_unit_type", billableUnitType,
+                        "billable_unit_count", usageEvent.billableUnitCount,
                         "contract_version", contractVersion,
                         "extractor_version", extractorVersion,
                         "usage_signature", usageSignature,
@@ -120,7 +140,7 @@ public class BillingService implements BillingUsageHandler {
                 eventTime
         );
 
-        int remaining = totalTokens;
+        int remaining = usageEvent.totalTokens;
         while (remaining > 0) {
             BillingWindowEntity window = getOrCreateActiveWindow(customerId, apiKeyId, model, eventTime);
             int available = TOKEN_LIMIT - window.tokenTotal;

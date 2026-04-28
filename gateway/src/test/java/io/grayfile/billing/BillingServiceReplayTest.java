@@ -72,8 +72,8 @@ class BillingServiceReplayTest {
     void shouldDeduplicateReplayOnSameRequestId() {
         Instant eventTime = Instant.parse("2026-04-09T10:15:30Z");
 
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-1", 1000, 40, 60, 100, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-1", 1000, 40, 60, 100, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime.plusSeconds(1));
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-1", 1000, 40, 60, 100, "token", "tokens", 100D, "{}", CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-1", 1000, 40, 60, 100, "token", "tokens", 100D, "{}", CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime.plusSeconds(1));
 
         assertEquals(1L, usageEventRepository.count());
         assertEquals(1L, billingWindowRepository.count());
@@ -85,8 +85,8 @@ class BillingServiceReplayTest {
     void shouldIgnoreRetryWithChangedTokenPayloadOnSameRequestId() {
         Instant eventTime = Instant.parse("2026-04-09T11:15:30Z");
 
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-2", 1000, 30, 20, 50, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-2", 1000, 300, 200, 500, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime.plusSeconds(5));
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-2", 1000, 30, 20, 50, "token", "tokens", 50D, "{}", CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-2", 1000, 300, 200, 500, "token", "tokens", 500D, "{}", CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime.plusSeconds(5));
 
         assertEquals(1L, usageEventRepository.count());
         assertEquals(50, usageEventRepository.listAll().getFirst().totalTokens);

@@ -65,7 +65,7 @@ class BillingServiceTest {
     void setUp() {
         lenient().when(pricingService.resolveEffectivePricing(anyString(), anyString()))
                 .thenReturn(new PricingService.EffectivePricing(BigDecimal.ZERO.setScale(6), BigDecimal.ZERO.setScale(6), "model-default"));
-        lenient().when(pricingService.calculateCost(any(), anyLong(), anyInt()))
+        lenient().when(pricingService.calculateCost(any(), anyLong(), anyString(), any()))
                 .thenReturn(new PricingService.CostBreakdown(BigDecimal.ZERO.setScale(6), BigDecimal.ZERO.setScale(6), BigDecimal.ZERO.setScale(6)));
         billingService = new BillingService(usageEventRepository, billingWindowRepository, billingMetrics, auditLogService, pricingService);
     }
@@ -76,7 +76,7 @@ class BillingServiceTest {
         when(usageEventRepository.findByBusinessKey("req-0", "customer-1", "key-1", "gpt-4o-mini"))
                 .thenReturn(Optional.empty());
 
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-0", 250, 0, 0, 0, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-0", 250, 0, 0, 0, "token", "tokens", 0D, "{}", CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
 
         verify(usageEventRepository).persistAndFlush(any(UsageEventEntity.class));
         verify(billingMetrics).recordUsageEvent(0);
@@ -105,7 +105,7 @@ class BillingServiceTest {
             return null;
         }).when(billingWindowRepository).persist(any(BillingWindowEntity.class));
 
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-overflow", 4000, 1100, 1023, 2123, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-overflow", 4000, 1100, 1023, 2123, "token", "tokens", 2123D, "{}", CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
 
         assertEquals(3, persisted.size());
         assertEquals(1000, persisted.get(0).tokenTotal);
@@ -165,6 +165,10 @@ class BillingServiceTest {
                 10,
                 5,
                 15,
+                "token",
+                "tokens",
+                15D,
+                "{}",
                 CONTRACT_VERSION,
                 EXTRACTOR_VERSION,
                 USAGE_SIGNATURE,
@@ -195,6 +199,10 @@ class BillingServiceTest {
                 10,
                 5,
                 15,
+                "token",
+                "tokens",
+                15D,
+                "{}",
                 CONTRACT_VERSION,
                 EXTRACTOR_VERSION,
                 USAGE_SIGNATURE,

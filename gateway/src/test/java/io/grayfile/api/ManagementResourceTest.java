@@ -565,7 +565,13 @@ class ManagementResourceTest {
         entity.durationMs = durationMs;
         entity.promptTokens = promptTokens;
         entity.completionTokens = completionTokens;
+        entity.inputTokens = promptTokens;
+        entity.outputTokens = completionTokens;
         entity.totalTokens = totalTokens;
+        entity.endpointType = "token";
+        entity.billableUnitType = "tokens";
+        entity.billableUnitCount = BigDecimal.valueOf(totalTokens).setScale(6);
+        entity.usageRaw = "{}";
         entity.contractVersion = "usage_extraction.v1";
         entity.extractorVersion = "gateway-backend-payload-v1";
         entity.usageSignature = "sig";
