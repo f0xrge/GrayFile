@@ -23,6 +23,7 @@ import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.math.BigDecimal;
 import java.util.Map;
@@ -68,20 +69,20 @@ class LlmProxyResourceTest {
     @Inject
     ObjectMapper objectMapper;
 
+    @Inject
+    ModelRoutingService modelRoutingService;
+
     @InjectMock
     BackendGateway backendGateway;
 
     @Inject
     UserTransaction userTransaction;
 
-    @Inject
-    ModelRoutingService modelRoutingService;
-
     @BeforeEach
     void cleanAndSeedDatabase() throws Exception {
         reset(backendGateway);
-        userTransaction.begin();
         try {
+            userTransaction.begin();
             billingWindowRepository.deleteAll();
             usageEventRepository.deleteAll();
             auditLogRepository.deleteAll();
@@ -115,15 +116,19 @@ class LlmProxyResourceTest {
 
             persistRoute("gpt-4o-mini", "backend-a", "http://backend-a:18080", 100, true);
             userTransaction.commit();
+            modelRoutingService.invalidateModel("gpt-4o-mini");
         } catch (Exception exception) {
-            userTransaction.rollback();
+            try {
+                userTransaction.rollback();
+            } catch (Exception ignored) {
+            }
             throw exception;
         }
     }
 
     @Test
     void shouldAcceptKnownScopeAndPersistUsage() throws Exception {
-        when(backendGateway.chatCompletions(anyString(), anyString(), any(), any())).thenReturn(Response.ok(
+        when(backendGateway.proxy(anyString(), any())).thenReturn(Response.ok(
                 objectMapper.readTree("""
                         {
                           "id": "resp-1",
@@ -167,7 +172,7 @@ class LlmProxyResourceTest {
 
     @Test
     void shouldFlagDivergenceBetweenEdgeExtractionAndBackendPayload() throws Exception {
-        when(backendGateway.chatCompletions(anyString(), anyString(), any(), any())).thenReturn(Response.ok(
+        when(backendGateway.proxy(anyString(), any())).thenReturn(Response.ok(
                 objectMapper.readTree("""
                         {
                           "id": "resp-divergence",
@@ -209,11 +214,11 @@ class LlmProxyResourceTest {
         userTransaction.commit();
         modelRoutingService.invalidateModel("gpt-4o-mini");
 
-        when(backendGateway.chatCompletions(eq("http://backend-a:18080"), eq("req-2"), any(), any()))
+        when(backendGateway.proxy(eq("http://backend-a:18080"), any()))
                 .thenReturn(Response.serverError().entity(objectMapper.readTree("""
                         {"error":"boom"}
                         """)).build());
-        when(backendGateway.chatCompletions(eq("http://backend-b:18080"), eq("req-2"), any(), any()))
+        when(backendGateway.proxy(eq("http://backend-b:18080"), any()))
                 .thenReturn(Response.ok(objectMapper.readTree("""
                         {"id":"resp-2","model":"gpt-4o-mini","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
                         """)).build());
@@ -233,7 +238,7 @@ class LlmProxyResourceTest {
 
     @Test
     void shouldWriteUsageExtractionAuditWhenUsageFieldsAreMissing() throws Exception {
-        when(backendGateway.chatCompletions(anyString(), anyString(), any(), any())).thenReturn(Response.ok(
+        when(backendGateway.proxy(anyString(), any())).thenReturn(Response.ok(
                 objectMapper.readTree("""
                         {
                           "id": "resp-no-usage",

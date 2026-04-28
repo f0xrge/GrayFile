@@ -20,6 +20,16 @@ static_resources:
                       domains: ["*"]
                       routes:
                         - match:
+                            path: "/llm/v1/responses"
+                          request_headers_to_add:
+                            - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                              header:
+                                key: x-request-id
+                                value: "%REQ(X-REQUEST-ID)%"
+                          route:
+                            cluster: gateway_service
+                            timeout: 15s
+                        - match:
                             path: "/llm/v1/chat/completions"
                           request_headers_to_add:
                             - append_action: OVERWRITE_IF_EXISTS_OR_ADD
@@ -30,7 +40,87 @@ static_resources:
                             cluster: gateway_service
                             timeout: 15s
                         - match:
-                            prefix: "/llm/v1/"
+                            path: "/llm/v1/completions"
+                          request_headers_to_add:
+                            - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                              header:
+                                key: x-request-id
+                                value: "%REQ(X-REQUEST-ID)%"
+                          route:
+                            cluster: gateway_service
+                            timeout: 15s
+                        - match:
+                            path: "/llm/v1/embeddings"
+                          request_headers_to_add:
+                            - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                              header:
+                                key: x-request-id
+                                value: "%REQ(X-REQUEST-ID)%"
+                          route:
+                            cluster: gateway_service
+                            timeout: 15s
+                        - match:
+                            path: "/llm/v1/audio/transcriptions"
+                          request_headers_to_add:
+                            - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                              header:
+                                key: x-request-id
+                                value: "%REQ(X-REQUEST-ID)%"
+                          route:
+                            cluster: gateway_service
+                            timeout: 15s
+                        - match:
+                            path: "/llm/v1/audio/translations"
+                          request_headers_to_add:
+                            - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                              header:
+                                key: x-request-id
+                                value: "%REQ(X-REQUEST-ID)%"
+                          route:
+                            cluster: gateway_service
+                            timeout: 15s
+                        - match:
+                            path: "/llm/v1/audio/speech"
+                          request_headers_to_add:
+                            - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                              header:
+                                key: x-request-id
+                                value: "%REQ(X-REQUEST-ID)%"
+                          route:
+                            cluster: gateway_service
+                            timeout: 15s
+                        - match:
+                            path: "/llm/v1/images/generations"
+                          request_headers_to_add:
+                            - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                              header:
+                                key: x-request-id
+                                value: "%REQ(X-REQUEST-ID)%"
+                          route:
+                            cluster: gateway_service
+                            timeout: 15s
+                        - match:
+                            path: "/llm/v1/moderations"
+                          request_headers_to_add:
+                            - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                              header:
+                                key: x-request-id
+                                value: "%REQ(X-REQUEST-ID)%"
+                          route:
+                            cluster: gateway_service
+                            timeout: 15s
+                        - match:
+                            path: "/llm/v1/models"
+                          request_headers_to_add:
+                            - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                              header:
+                                key: x-request-id
+                                value: "%REQ(X-REQUEST-ID)%"
+                          route:
+                            cluster: gateway_service
+                            timeout: 15s
+                        - match:
+                            path: "/llm/v1/files"
                           request_headers_to_add:
                             - append_action: OVERWRITE_IF_EXISTS_OR_ADD
                               header:

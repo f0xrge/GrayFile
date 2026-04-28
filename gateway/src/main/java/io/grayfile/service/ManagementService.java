@@ -431,7 +431,7 @@ public class ManagementService {
         entity.timePrice = pricingService.normalizePrice(timePrice, "customer-model time price");
         entity.tokenPrice = pricingService.normalizePrice(tokenPrice, "customer-model token price");
         entity.updatedAt = Instant.now();
-        if (oldState.isEmpty()) {
+        if (oldState.isEmpty() && customerModelPricingRepository.getEntityManager().contains(entity) == false) {
             customerModelPricingRepository.persist(entity);
         }
 
@@ -510,6 +510,27 @@ public class ManagementService {
         LlmModelEntity model = llmModelRepository.findByIdOptional(normalizedModelId).orElse(null);
         if (model == null || !model.active) {
             return UsageScopeValidation.failure("unknown or inactive model: " + normalizedModelId);
+        }
+
+        return UsageScopeValidation.success();
+    }
+
+    public UsageScopeValidation validateCustomerApiScope(String customerId, String apiKeyId) {
+        String normalizedCustomerId = normalizeIdentifier(customerId, "customer id");
+        String normalizedApiKeyId = normalizeIdentifier(apiKeyId, "api key id");
+
+        CustomerEntity customer = customerRepository.findByIdOptional(normalizedCustomerId).orElse(null);
+        if (customer == null || !customer.active) {
+            return UsageScopeValidation.failure("unknown or inactive customer: " + normalizedCustomerId);
+        }
+
+        ApiKeyEntity apiKey = apiKeyRepository.findByIdOptional(normalizedApiKeyId).orElse(null);
+        if (apiKey == null || !apiKey.active) {
+            return UsageScopeValidation.failure("unknown or inactive api key: " + normalizedApiKeyId);
+        }
+
+        if (!apiKey.customerId.equals(normalizedCustomerId)) {
+            return UsageScopeValidation.failure("api key " + normalizedApiKeyId + " does not belong to customer " + normalizedCustomerId);
         }
 
         return UsageScopeValidation.success();
