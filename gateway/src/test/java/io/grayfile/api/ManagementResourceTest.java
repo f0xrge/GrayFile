@@ -63,15 +63,20 @@ class ManagementResourceTest {
     @BeforeEach
     void cleanDatabase() throws Exception {
         userTransaction.begin();
-        billingWindowRepository.deleteAll();
-        usageEventRepository.deleteAll();
-        auditLogRepository.deleteAll();
-        auditExportStateRepository.deleteAll();
-        customerModelPricingRepository.deleteAll();
-        apiKeyRepository.deleteAll();
-        llmModelRepository.deleteAll();
-        customerRepository.deleteAll();
-        userTransaction.commit();
+        try {
+            billingWindowRepository.deleteAll();
+            usageEventRepository.deleteAll();
+            auditLogRepository.deleteAll();
+            auditExportStateRepository.deleteAll();
+            customerModelPricingRepository.deleteAll();
+            apiKeyRepository.deleteAll();
+            llmModelRepository.deleteAll();
+            customerRepository.deleteAll();
+            userTransaction.commit();
+        } catch (Exception exception) {
+            userTransaction.rollback();
+            throw exception;
+        }
     }
 
     @Test
@@ -612,7 +617,13 @@ class ManagementResourceTest {
         entity.durationMs = durationMs;
         entity.promptTokens = promptTokens;
         entity.completionTokens = completionTokens;
+        entity.inputTokens = promptTokens;
+        entity.outputTokens = completionTokens;
         entity.totalTokens = totalTokens;
+        entity.endpointType = "token";
+        entity.billableUnitType = "tokens";
+        entity.billableUnitCount = BigDecimal.valueOf(totalTokens).setScale(6);
+        entity.usageRaw = "{}";
         entity.contractVersion = "usage_extraction.v1";
         entity.extractorVersion = "gateway-backend-payload-v1";
         entity.usageSignature = "sig";

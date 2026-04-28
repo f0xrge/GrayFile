@@ -47,30 +47,33 @@ class BillingServiceReplayTest {
     @BeforeEach
     void cleanDatabase() throws Exception {
         userTransaction.begin();
-        billingWindowRepository.deleteAll();
-        usageEventRepository.deleteAll();
-        auditLogRepository.deleteAll();
-        auditExportStateRepository.deleteAll();
-        llmModelRepository.deleteAll();
-        LlmModelEntity model = new LlmModelEntity();
-        model.id = "gpt-4o-mini";
-        model.displayName = "GPT-4o Mini";
-        model.provider = "openai";
-        model.active = true;
-        model.defaultTimeCriterionSeconds = 600;
-        model.defaultTimePrice = BigDecimal.ZERO.setScale(6);
-        model.defaultTokenCriterion = 1000;
-        model.defaultTokenPrice = BigDecimal.ZERO.setScale(6);
-        llmModelRepository.persist(model);
-        userTransaction.commit();
+        try {
+            billingWindowRepository.deleteAll();
+            usageEventRepository.deleteAll();
+            auditLogRepository.deleteAll();
+            auditExportStateRepository.deleteAll();
+            llmModelRepository.deleteAll();
+            LlmModelEntity model = new LlmModelEntity();
+            model.id = "gpt-4o-mini";
+            model.displayName = "GPT-4o Mini";
+            model.provider = "openai";
+            model.active = true;
+            model.defaultTimePrice = BigDecimal.ZERO.setScale(6);
+            model.defaultTokenPrice = BigDecimal.ZERO.setScale(6);
+            llmModelRepository.persist(model);
+            userTransaction.commit();
+        } catch (Exception exception) {
+            userTransaction.rollback();
+            throw exception;
+        }
     }
 
     @Test
     void shouldDeduplicateReplayOnSameRequestId() {
         Instant eventTime = Instant.parse("2026-04-09T10:15:30Z");
 
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-1", 1000, 40, 60, 100, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-1", 1000, 40, 60, 100, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime.plusSeconds(1));
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-1", 1000, 40, 60, 100, "token", "tokens", 100D, "{}", CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-1", 1000, 40, 60, 100, "token", "tokens", 100D, "{}", CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime.plusSeconds(1));
 
         assertEquals(1L, usageEventRepository.count());
         assertEquals(1L, billingWindowRepository.count());
@@ -82,8 +85,8 @@ class BillingServiceReplayTest {
     void shouldIgnoreRetryWithChangedTokenPayloadOnSameRequestId() {
         Instant eventTime = Instant.parse("2026-04-09T11:15:30Z");
 
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-2", 1000, 30, 20, 50, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
-        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-2", 1000, 300, 200, 500, CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime.plusSeconds(5));
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-2", 1000, 30, 20, 50, "token", "tokens", 50D, "{}", CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime);
+        billingService.handleUsage("customer-1", "key-1", "gpt-4o-mini", "req-2", 1000, 300, 200, 500, "token", "tokens", 500D, "{}", CONTRACT_VERSION, EXTRACTOR_VERSION, USAGE_SIGNATURE, eventTime.plusSeconds(5));
 
         assertEquals(1L, usageEventRepository.count());
         assertEquals(50, usageEventRepository.listAll().getFirst().totalTokens);

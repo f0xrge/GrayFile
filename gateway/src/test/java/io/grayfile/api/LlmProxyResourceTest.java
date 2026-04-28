@@ -14,6 +14,7 @@ import io.grayfile.persistence.CustomerRepository;
 import io.grayfile.persistence.LlmModelRepository;
 import io.grayfile.persistence.ModelRouteRepository;
 import io.grayfile.persistence.UsageEventRepository;
+import io.grayfile.service.ModelRoutingService;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -22,7 +23,9 @@ import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.math.BigDecimal;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
@@ -66,6 +69,9 @@ class LlmProxyResourceTest {
     @Inject
     ObjectMapper objectMapper;
 
+    @Inject
+    ModelRoutingService modelRoutingService;
+
     @InjectMock
     BackendGateway backendGateway;
 
@@ -75,43 +81,54 @@ class LlmProxyResourceTest {
     @BeforeEach
     void cleanAndSeedDatabase() throws Exception {
         reset(backendGateway);
-        userTransaction.begin();
-        billingWindowRepository.deleteAll();
-        usageEventRepository.deleteAll();
-        auditLogRepository.deleteAll();
-        auditExportStateRepository.deleteAll();
-        modelRouteRepository.deleteAll();
-        apiKeyRepository.deleteAll();
-        llmModelRepository.deleteAll();
-        customerRepository.deleteAll();
+        try {
+            userTransaction.begin();
+            billingWindowRepository.deleteAll();
+            usageEventRepository.deleteAll();
+            auditLogRepository.deleteAll();
+            auditExportStateRepository.deleteAll();
+            modelRouteRepository.deleteAll();
+            apiKeyRepository.deleteAll();
+            llmModelRepository.deleteAll();
+            customerRepository.deleteAll();
 
-        CustomerEntity customer = new CustomerEntity();
-        customer.id = "customer-1";
-        customer.name = "Acme";
-        customer.active = true;
-        customerRepository.persist(customer);
+            CustomerEntity customer = new CustomerEntity();
+            customer.id = "customer-1";
+            customer.name = "Acme";
+            customer.active = true;
+            customerRepository.persist(customer);
 
-        LlmModelEntity model = new LlmModelEntity();
-        model.id = "gpt-4o-mini";
-        model.displayName = "GPT-4o Mini";
-        model.provider = "openai";
-        model.active = true;
-        llmModelRepository.persist(model);
+            LlmModelEntity model = new LlmModelEntity();
+            model.id = "gpt-4o-mini";
+            model.displayName = "GPT-4o Mini";
+            model.provider = "openai";
+            model.active = true;
+            model.defaultTimePrice = BigDecimal.ZERO.setScale(6);
+            model.defaultTokenPrice = BigDecimal.ZERO.setScale(6);
+            llmModelRepository.persist(model);
 
-        ApiKeyEntity apiKey = new ApiKeyEntity();
-        apiKey.id = "key-1";
-        apiKey.customerId = "customer-1";
-        apiKey.name = "Primary";
-        apiKey.active = true;
-        apiKeyRepository.persist(apiKey);
+            ApiKeyEntity apiKey = new ApiKeyEntity();
+            apiKey.id = "key-1";
+            apiKey.customerId = "customer-1";
+            apiKey.name = "Primary";
+            apiKey.active = true;
+            apiKeyRepository.persist(apiKey);
 
-        persistRoute("gpt-4o-mini", "backend-a", "http://backend-a:18080", 100, true);
-        userTransaction.commit();
+            persistRoute("gpt-4o-mini", "backend-a", "http://backend-a:18080", 100, true);
+            userTransaction.commit();
+            modelRoutingService.invalidateModel("gpt-4o-mini");
+        } catch (Exception exception) {
+            try {
+                userTransaction.rollback();
+            } catch (Exception ignored) {
+            }
+            throw exception;
+        }
     }
 
     @Test
     void shouldAcceptKnownScopeAndPersistUsage() throws Exception {
-        when(backendGateway.chatCompletions(anyString(), anyString(), any(), any())).thenReturn(Response.ok(
+        when(backendGateway.proxy(anyString(), any())).thenReturn(Response.ok(
                 objectMapper.readTree("""
                         {
                           "id": "resp-1",
@@ -144,7 +161,7 @@ class LlmProxyResourceTest {
                 .body("usage.total_tokens", equalTo(20))
                 .header("x-request-id", equalTo("req-1"))
                 .header("x-backend-id", equalTo("backend-a"))
-                .header("x-grayfile-usage-contract-version", equalTo("usage_extraction.v1"))
+                .header("x-grayfile-usage-contract-version", equalTo("usage_extraction.v2"))
                 .header("x-grayfile-usage-extractor-version", equalTo("gateway-backend-payload-v1"));
 
         assertEquals(1L, usageEventRepository.count());
@@ -153,9 +170,11 @@ class LlmProxyResourceTest {
     }
 
 
+
+
     @Test
     void shouldFlagDivergenceBetweenEdgeExtractionAndBackendPayload() throws Exception {
-        when(backendGateway.chatCompletions(anyString(), anyString(), any(), any())).thenReturn(Response.ok(
+        when(backendGateway.proxy(anyString(), any())).thenReturn(Response.ok(
                 objectMapper.readTree("""
                         {
                           "id": "resp-divergence",
@@ -195,12 +214,13 @@ class LlmProxyResourceTest {
         userTransaction.begin();
         persistRoute("gpt-4o-mini", "backend-b", "http://backend-b:18080", 1, true);
         userTransaction.commit();
+        modelRoutingService.invalidateModel("gpt-4o-mini");
 
-        when(backendGateway.chatCompletions(eq("http://backend-a:18080"), eq("req-2"), any(), any()))
+        when(backendGateway.proxy(eq("http://backend-a:18080"), any()))
                 .thenReturn(Response.serverError().entity(objectMapper.readTree("""
                         {"error":"boom"}
                         """)).build());
-        when(backendGateway.chatCompletions(eq("http://backend-b:18080"), eq("req-2"), any(), any()))
+        when(backendGateway.proxy(eq("http://backend-b:18080"), any()))
                 .thenReturn(Response.ok(objectMapper.readTree("""
                         {"id":"resp-2","model":"gpt-4o-mini","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
                         """)).build());
@@ -220,7 +240,7 @@ class LlmProxyResourceTest {
 
     @Test
     void shouldWriteUsageExtractionAuditWhenUsageFieldsAreMissing() throws Exception {
-        when(backendGateway.chatCompletions(anyString(), anyString(), any(), any())).thenReturn(Response.ok(
+        when(backendGateway.proxy(anyString(), any())).thenReturn(Response.ok(
                 objectMapper.readTree("""
                         {
                           "id": "resp-no-usage",
@@ -243,6 +263,65 @@ class LlmProxyResourceTest {
 
         assertEquals(0L, usageEventRepository.count());
         assertTrue(auditLogRepository.listFiltered("USAGE_EXTRACTION_AUDIT", null, null, "usage_extraction", "req-no-usage", 10).size() >= 1);
+    }
+
+    @Test
+    void shouldPersistUsageForStreamingResponsesFromEdgeFinalHeaders() {
+        when(backendGateway.proxy(anyString(), any())).thenReturn(Response.ok("""
+                data: {"id":"resp-stream","type":"response.output_text.delta"}
+
+                data: [DONE]
+
+                """)
+                .type("text/event-stream")
+                .header("x-edge-usage-prompt-tokens", "14")
+                .header("x-edge-usage-completion-tokens", "6")
+                .header("x-edge-usage-total-tokens", "20")
+                .build());
+
+        given()
+                .contentType("application/json")
+                .header("x-customer-id", "customer-1")
+                .header("x-api-key-id", "key-1")
+                .header("x-request-id", "req-stream-ok")
+                .body(Map.of("model", "gpt-4o-mini", "stream", true))
+                .when()
+                .post("/llm/v1/chat/completions")
+                .then()
+                .statusCode(200)
+                .header("x-grayfile-usage-capture", equalTo("captured"))
+                .header("x-grayfile-usage-contract-version", equalTo("usage_extraction.v2"));
+
+        assertEquals(1L, usageEventRepository.count());
+        assertEquals(20, billingWindowRepository.listAll().getFirst().tokenTotal);
+    }
+
+    @Test
+    void shouldAuditStreamingResponsesMissingFinalUsage() {
+        when(backendGateway.proxy(anyString(), any())).thenReturn(Response.ok("""
+                data: {"id":"resp-stream-missing","type":"response.output_text.delta"}
+
+                data: [DONE]
+
+                """)
+                .type("text/event-stream")
+                .build());
+
+        given()
+                .contentType("application/json")
+                .header("x-customer-id", "customer-1")
+                .header("x-api-key-id", "key-1")
+                .header("x-request-id", "req-stream-missing")
+                .body(Map.of("model", "gpt-4o-mini", "stream", true))
+                .when()
+                .post("/llm/v1/chat/completions")
+                .then()
+                .statusCode(200)
+                .header("x-grayfile-usage-capture", equalTo("stream_final_missing_usage"));
+
+        assertEquals(0L, usageEventRepository.count());
+        assertTrue(auditLogRepository.listFiltered("USAGE_EXTRACTION_AUDIT", null, null, "usage_extraction", "req-stream-missing", 10).stream()
+                .anyMatch(entry -> entry.payloadJson != null && entry.payloadJson.contains("stream_final_missing_usage")));
     }
 
     @Test

@@ -1,13 +1,18 @@
 package io.grayfile.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.grayfile.api.usage.UsageExtractor;
 import io.grayfile.billing.BillingUsageHandler;
 import io.grayfile.service.AuditLogService;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 @ApplicationScoped
@@ -19,13 +24,18 @@ public class UsageCaptureService {
     private final AuditLogService auditLogService;
     private final String extractorVersion;
     private final String usageSigningKey;
+    private final List<UsageExtractor> usageExtractors;
 
     public UsageCaptureService(BillingUsageHandler billingUsageHandler,
                                AuditLogService auditLogService,
+                               Instance<UsageExtractor> usageExtractors,
                                @ConfigProperty(name = "grayfile.usage.extractor.version", defaultValue = "gateway-backend-payload-v1") String extractorVersion,
                                @ConfigProperty(name = "grayfile.usage.signing-key", defaultValue = "grayfile-dev-usage-signing-key") String usageSigningKey) {
         this.billingUsageHandler = billingUsageHandler;
         this.auditLogService = auditLogService;
+        this.usageExtractors = usageExtractors.stream()
+                .sorted(Comparator.comparing(extractor -> extractor.getClass().getSimpleName()))
+                .toList();
         this.extractorVersion = extractorVersion;
         this.usageSigningKey = usageSigningKey;
     }
@@ -34,72 +44,86 @@ public class UsageCaptureService {
                                              String apiKeyId,
                                              String requestId,
                                              long durationMs,
+                                             OpenAiEndpoint endpoint,
                                              JsonNode payload,
                                              EdgeUsageExtraction edgeUsageExtraction) {
-        JsonNode usageNode = payload.path("usage");
-        if (usageNode.isMissingNode() || usageNode.isNull()) {
-            logExtractionAudit("missing_usage", requestId, payload.path("model").asText("unknown-model"));
-            return UsageCaptureDecision.skippedReason("missing_usage");
+        String model = payload.path("model").asText("unknown-model");
+        Optional<UsageExtractor> selectedExtractor = usageExtractors.stream()
+                .filter(extractor -> extractor.supports(endpoint, payload))
+                .findFirst();
+        if (selectedExtractor.isEmpty()) {
+            logExtractionAudit("missing_usage_extractor", requestId, model, endpoint, null, null);
+            return UsageCaptureDecision.skippedReason("missing_usage_extractor");
         }
 
-        Integer promptTokens = readNonNegativeInt(usageNode, "prompt_tokens");
-        Integer completionTokens = readNonNegativeInt(usageNode, "completion_tokens");
-        Integer totalTokens = readNonNegativeInt(usageNode, "total_tokens");
-        if (promptTokens == null || completionTokens == null || totalTokens == null) {
-            LOG.warnf("Skipping usage capture for request_id=%s due to invalid usage payload", requestId);
-            logExtractionAudit("invalid_usage_payload", requestId, payload.path("model").asText("unknown-model"));
+        UsageExtractor.ExtractionResult extraction = selectedExtractor.get().extract(endpoint, payload);
+        if (extraction.ambiguous()) {
+            LOG.warnf("Skipping usage capture for request_id=%s endpoint=%s reason=%s", requestId, endpoint, extraction.reason());
+            logExtractionAudit(extraction.reason(), requestId, model, endpoint, extraction.endpointType(), extraction.billableUnits());
+            return UsageCaptureDecision.skippedReason(extraction.reason());
+        }
+
+        Integer inputTokens = extraction.inputTokens();
+        Integer outputTokens = extraction.outputTokens();
+        Integer totalTokens = extraction.totalTokens();
+
+        if (extraction.hasTokenUsage() && (inputTokens == null || outputTokens == null || totalTokens == null)) {
+            logExtractionAudit("invalid_usage_payload", requestId, model, endpoint, extraction.endpointType(), extraction.billableUnits());
             return UsageCaptureDecision.skippedReason("invalid_usage_payload");
         }
 
-        String model = payload.path("model").asText("unknown-model");
-        UsageExtractionContract contract = UsageExtractionContract.of(
-                requestId,
-                model,
-                promptTokens,
-                completionTokens,
-                totalTokens,
-                extractorVersion
-        );
-
-        if (edgeUsageExtraction.present() && edgeUsageExtraction.hasDivergence(promptTokens, completionTokens, totalTokens)) {
+        if (edgeUsageExtraction.present() && extraction.hasTokenUsage()
+                && edgeUsageExtraction.hasDivergence(inputTokens, outputTokens, totalTokens)) {
             LOG.warnf(
-                    "Rejecting usage capture for request_id=%s due to edge/backend usage divergence edge={prompt:%d,completion:%d,total:%d} backend={prompt:%d,completion:%d,total:%d}",
+                    "Rejecting usage capture for request_id=%s due to edge/backend usage divergence edge={input:%d,output:%d,total:%d} backend={input:%d,output:%d,total:%d}",
                     requestId,
-                    edgeUsageExtraction.promptTokens(),
-                    edgeUsageExtraction.completionTokens(),
+                    edgeUsageExtraction.inputTokens(),
+                    edgeUsageExtraction.outputTokens(),
                     edgeUsageExtraction.totalTokens(),
-                    promptTokens,
-                    completionTokens,
+                    inputTokens,
+                    outputTokens,
                     totalTokens
             );
-            logExtractionAudit("edge_backend_divergence", requestId, model);
+            logExtractionAudit("edge_backend_divergence", requestId, model, endpoint, extraction.endpointType(), extraction.billableUnits());
             return UsageCaptureDecision.divergentReason("edge_backend_divergence");
         }
 
+        UsageExtractionContract contract = UsageExtractionContract.of(
+                requestId,
+                model,
+                inputTokens,
+                outputTokens,
+                totalTokens,
+                extraction.billableUnits(),
+                extraction.endpointType(),
+                extractorVersion
+        );
+
         String signature = contract.signature(usageSigningKey);
+        String resolvedEndpointType = extraction.endpointType() == null
+                ? endpoint.name().toLowerCase(Locale.ROOT)
+                : extraction.endpointType();
+        String billableUnitType = resolveBillableUnitType(endpoint, extraction);
+        double billableUnitCount = resolveBillableUnitCount(extraction, totalTokens);
         billingUsageHandler.handleUsage(
                 customerId,
                 apiKeyId,
                 model,
                 requestId,
                 durationMs,
-                promptTokens,
-                completionTokens,
-                totalTokens,
+                inputTokens == null ? 0 : inputTokens,
+                outputTokens == null ? 0 : outputTokens,
+                totalTokens == null ? 0 : totalTokens,
+                resolvedEndpointType,
+                billableUnitType,
+                billableUnitCount,
+                payload.toString(),
                 contract.contractVersion(),
                 extractorVersion,
                 signature,
                 Instant.now()
         );
         return UsageCaptureDecision.capturedReason(contract.contractVersion(), extractorVersion);
-    }
-
-    private Integer readNonNegativeInt(JsonNode node, String fieldName) {
-        JsonNode field = node.path(fieldName);
-        if (!field.isInt() || field.asInt() < 0) {
-            return null;
-        }
-        return field.asInt();
     }
 
     public record UsageCaptureDecision(boolean captured,
@@ -121,7 +145,19 @@ public class UsageCaptureService {
         }
     }
 
-    private void logExtractionAudit(String reason, String requestId, String model) {
+    public void auditSkippedExtraction(String reason,
+                                       String requestId,
+                                       String model,
+                                       OpenAiEndpoint endpoint) {
+        logExtractionAudit(reason, requestId, model, endpoint, null, null);
+    }
+
+    private void logExtractionAudit(String reason,
+                                    String requestId,
+                                    String model,
+                                    OpenAiEndpoint endpoint,
+                                    String endpointType,
+                                    Double billableUnits) {
         auditLogService.logEvent(
                 "USAGE_EXTRACTION_AUDIT",
                 "usage-capture-service",
@@ -130,26 +166,29 @@ public class UsageCaptureService {
                 auditLogService.payloadOf(
                         "reason", reason,
                         "request_id", requestId,
-                        "model", model
+                        "model", model,
+                        "endpoint", endpoint.path(),
+                        "endpoint_type", endpointType,
+                        "billable_units", billableUnits
                 ),
                 Instant.now()
         );
     }
 
-    public record EdgeUsageExtraction(boolean present, int promptTokens, int completionTokens, int totalTokens) {
+    public record EdgeUsageExtraction(boolean present, int inputTokens, int outputTokens, int totalTokens) {
 
         public static EdgeUsageExtraction absent() {
             return new EdgeUsageExtraction(false, -1, -1, -1);
         }
 
-        public static EdgeUsageExtraction fromHeaders(String promptHeader, String completionHeader, String totalHeader) {
-            Optional<Integer> promptTokens = parseNonNegativeInt(promptHeader);
-            Optional<Integer> completionTokens = parseNonNegativeInt(completionHeader);
+        public static EdgeUsageExtraction fromHeaders(String inputHeader, String outputHeader, String totalHeader) {
+            Optional<Integer> inputTokens = parseNonNegativeInt(inputHeader);
+            Optional<Integer> outputTokens = parseNonNegativeInt(outputHeader);
             Optional<Integer> totalTokens = parseNonNegativeInt(totalHeader);
-            if (promptTokens.isEmpty() || completionTokens.isEmpty() || totalTokens.isEmpty()) {
+            if (inputTokens.isEmpty() || outputTokens.isEmpty() || totalTokens.isEmpty()) {
                 return absent();
             }
-            return new EdgeUsageExtraction(true, promptTokens.get(), completionTokens.get(), totalTokens.get());
+            return new EdgeUsageExtraction(true, inputTokens.get(), outputTokens.get(), totalTokens.get());
         }
 
         private static Optional<Integer> parseNonNegativeInt(String value) {
@@ -164,11 +203,33 @@ public class UsageCaptureService {
             }
         }
 
-        public boolean hasDivergence(int prompt, int completion, int total) {
+        public boolean hasDivergence(int input, int output, int total) {
             if (!present) {
                 return false;
             }
-            return promptTokens != prompt || completionTokens != completion || totalTokens != total;
+            return inputTokens != input || outputTokens != output || totalTokens != total;
         }
+    }
+
+    private String resolveBillableUnitType(OpenAiEndpoint endpoint, UsageExtractor.ExtractionResult extraction) {
+        if (extraction.hasTokenUsage()) {
+            return "tokens";
+        }
+        return switch (endpoint) {
+            case AUDIO_TRANSCRIPTIONS, AUDIO_TRANSLATIONS, AUDIO_SPEECH -> "audio_seconds";
+            case IMAGE_GENERATIONS -> "images";
+            case MODERATIONS -> "requests";
+            default -> "requests";
+        };
+    }
+
+    private double resolveBillableUnitCount(UsageExtractor.ExtractionResult extraction, Integer totalTokens) {
+        if (extraction.billableUnits() != null) {
+            return Math.max(extraction.billableUnits(), 0D);
+        }
+        if (extraction.hasTokenUsage() && totalTokens != null) {
+            return Math.max(totalTokens, 0);
+        }
+        return 1D;
     }
 }

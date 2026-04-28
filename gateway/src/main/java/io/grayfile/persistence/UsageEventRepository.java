@@ -29,7 +29,7 @@ public class UsageEventRepository implements PanacheRepositoryBase<UsageEventEnt
 
     public UsageAggregate summarize(String customerId, String modelId, Instant startFrom, Instant endTo) {
         List<Object[]> rows = buildAggregateQuery(
-                "null, null, count(u), coalesce(sum(u.durationMs), 0), coalesce(sum(u.promptTokens), 0), coalesce(sum(u.completionTokens), 0), coalesce(sum(u.totalTokens), 0), coalesce(sum(u.timeCost), 0), coalesce(sum(u.tokenCost), 0), coalesce(sum(u.totalCost), 0)",
+                "null, null, null, null, count(u), coalesce(sum(u.durationMs), 0), coalesce(sum(u.promptTokens), 0), coalesce(sum(u.completionTokens), 0), coalesce(sum(u.totalTokens), 0), coalesce(sum(u.billableUnitCount), 0), coalesce(sum(u.timeCost), 0), coalesce(sum(u.tokenCost), 0), coalesce(sum(u.totalCost), 0)",
                 null,
                 "coalesce(sum(u.totalCost), 0) desc, coalesce(sum(u.totalTokens), 0) desc",
                 customerId,
@@ -46,7 +46,7 @@ public class UsageEventRepository implements PanacheRepositoryBase<UsageEventEnt
 
     public List<UsageAggregate> aggregateByCustomer(String customerId, String modelId, Instant startFrom, Instant endTo, int limit) {
         return buildAggregateQuery(
-                "u.customerId, null, count(u), coalesce(sum(u.durationMs), 0), coalesce(sum(u.promptTokens), 0), coalesce(sum(u.completionTokens), 0), coalesce(sum(u.totalTokens), 0), coalesce(sum(u.timeCost), 0), coalesce(sum(u.tokenCost), 0), coalesce(sum(u.totalCost), 0)",
+                "u.customerId, null, null, null, count(u), coalesce(sum(u.durationMs), 0), coalesce(sum(u.promptTokens), 0), coalesce(sum(u.completionTokens), 0), coalesce(sum(u.totalTokens), 0), coalesce(sum(u.billableUnitCount), 0), coalesce(sum(u.timeCost), 0), coalesce(sum(u.tokenCost), 0), coalesce(sum(u.totalCost), 0)",
                 "u.customerId",
                 "coalesce(sum(u.totalCost), 0) desc, coalesce(sum(u.totalTokens), 0) desc, u.customerId asc",
                 customerId,
@@ -59,7 +59,7 @@ public class UsageEventRepository implements PanacheRepositoryBase<UsageEventEnt
 
     public List<UsageAggregate> aggregateByModel(String customerId, String modelId, Instant startFrom, Instant endTo, int limit) {
         return buildAggregateQuery(
-                "null, u.model, count(u), coalesce(sum(u.durationMs), 0), coalesce(sum(u.promptTokens), 0), coalesce(sum(u.completionTokens), 0), coalesce(sum(u.totalTokens), 0), coalesce(sum(u.timeCost), 0), coalesce(sum(u.tokenCost), 0), coalesce(sum(u.totalCost), 0)",
+                "null, u.model, null, null, count(u), coalesce(sum(u.durationMs), 0), coalesce(sum(u.promptTokens), 0), coalesce(sum(u.completionTokens), 0), coalesce(sum(u.totalTokens), 0), coalesce(sum(u.billableUnitCount), 0), coalesce(sum(u.timeCost), 0), coalesce(sum(u.tokenCost), 0), coalesce(sum(u.totalCost), 0)",
                 "u.model",
                 "coalesce(sum(u.totalCost), 0) desc, coalesce(sum(u.totalTokens), 0) desc, u.model asc",
                 customerId,
@@ -72,9 +72,22 @@ public class UsageEventRepository implements PanacheRepositoryBase<UsageEventEnt
 
     public List<UsageAggregate> aggregateByCustomerAndModel(String customerId, String modelId, Instant startFrom, Instant endTo, int limit) {
         return buildAggregateQuery(
-                "u.customerId, u.model, count(u), coalesce(sum(u.durationMs), 0), coalesce(sum(u.promptTokens), 0), coalesce(sum(u.completionTokens), 0), coalesce(sum(u.totalTokens), 0), coalesce(sum(u.timeCost), 0), coalesce(sum(u.tokenCost), 0), coalesce(sum(u.totalCost), 0)",
+                "u.customerId, u.model, null, null, count(u), coalesce(sum(u.durationMs), 0), coalesce(sum(u.promptTokens), 0), coalesce(sum(u.completionTokens), 0), coalesce(sum(u.totalTokens), 0), coalesce(sum(u.billableUnitCount), 0), coalesce(sum(u.timeCost), 0), coalesce(sum(u.tokenCost), 0), coalesce(sum(u.totalCost), 0)",
                 "u.customerId, u.model",
                 "coalesce(sum(u.totalCost), 0) desc, coalesce(sum(u.totalTokens), 0) desc, u.customerId asc, u.model asc",
+                customerId,
+                modelId,
+                startFrom,
+                endTo,
+                limit
+        ).stream().map(this::toAggregate).toList();
+    }
+
+    public List<UsageAggregate> aggregateByEndpointAndUnit(String customerId, String modelId, Instant startFrom, Instant endTo, int limit) {
+        return buildAggregateQuery(
+                "null, null, u.endpointType, u.billableUnitType, count(u), coalesce(sum(u.durationMs), 0), coalesce(sum(u.promptTokens), 0), coalesce(sum(u.completionTokens), 0), coalesce(sum(u.totalTokens), 0), coalesce(sum(u.billableUnitCount), 0), coalesce(sum(u.timeCost), 0), coalesce(sum(u.tokenCost), 0), coalesce(sum(u.totalCost), 0)",
+                "u.endpointType, u.billableUnitType",
+                "coalesce(sum(u.totalCost), 0) desc, coalesce(sum(u.billableUnitCount), 0) desc, u.endpointType asc, u.billableUnitType asc",
                 customerId,
                 modelId,
                 startFrom,
@@ -126,14 +139,17 @@ public class UsageEventRepository implements PanacheRepositoryBase<UsageEventEnt
         return new UsageAggregate(
                 (String) row[0],
                 (String) row[1],
-                toLong(row[2]),
-                toLong(row[3]),
+                (String) row[2],
+                (String) row[3],
                 toLong(row[4]),
                 toLong(row[5]),
                 toLong(row[6]),
-                toBigDecimal(row[7]),
-                toBigDecimal(row[8]),
-                toBigDecimal(row[9])
+                toLong(row[7]),
+                toLong(row[8]),
+                toBigDecimal(row[9]),
+                toBigDecimal(row[10]),
+                toBigDecimal(row[11]),
+                toBigDecimal(row[12])
         );
     }
 
@@ -153,11 +169,14 @@ public class UsageEventRepository implements PanacheRepositoryBase<UsageEventEnt
 
     public record UsageAggregate(String customerId,
                                  String modelId,
+                                 String endpointType,
+                                 String billableUnitType,
                                  long requestCount,
                                  long durationMs,
                                  long promptTokens,
                                  long completionTokens,
                                  long totalTokens,
+                                 BigDecimal billableUnitCount,
                                  BigDecimal timeCost,
                                  BigDecimal tokenCost,
                                  BigDecimal totalCost) {
@@ -165,11 +184,14 @@ public class UsageEventRepository implements PanacheRepositoryBase<UsageEventEnt
             return new UsageAggregate(
                     null,
                     null,
+                    null,
+                    null,
                     0,
                     0,
                     0,
                     0,
                     0,
+                    BigDecimal.ZERO.setScale(6),
                     BigDecimal.ZERO.setScale(6),
                     BigDecimal.ZERO.setScale(6),
                     BigDecimal.ZERO.setScale(6)

@@ -34,8 +34,26 @@ public class UsageEventEntity extends PanacheEntityBase {
     @Column(name = "completion_tokens", nullable = false)
     public int completionTokens;
 
+    @Column(name = "input_tokens")
+    public Integer inputTokens;
+
+    @Column(name = "output_tokens")
+    public Integer outputTokens;
+
     @Column(name = "total_tokens", nullable = false)
     public int totalTokens;
+
+    @Column(name = "endpoint_type", nullable = false)
+    public String endpointType;
+
+    @Column(name = "billable_unit_type", nullable = false)
+    public String billableUnitType;
+
+    @Column(name = "billable_unit_count", nullable = false)
+    public BigDecimal billableUnitCount;
+
+    @Column(name = "usage_raw")
+    public String usageRaw;
 
     @Column(name = "duration_ms", nullable = false)
     public long durationMs;
