@@ -1,3 +1,0 @@
-grpcio==1.72.0rc1
-grpcio-tools==1.72.0rc1
-envoy-proto==0.1.0

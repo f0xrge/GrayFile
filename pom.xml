@@ -10,6 +10,7 @@
 
   <modules>
     <module>gateway</module>
+    <module>ext-proc</module>
   </modules>
 
   <properties>
@@ -22,17 +23,9 @@
     <jacoco-plugin.version>0.8.14</jacoco-plugin.version>
     <jacoco.minimum.line.coverage>0.15</jacoco.minimum.line.coverage>
     <jacoco.minimum.branch.coverage>0.05</jacoco.minimum.branch.coverage>
+    <envoy-control-plane.version>1.0.49</envoy-control-plane.version>
+    <grpc.version>1.79.0</grpc.version>
+    <jackson.version>2.18.3</jackson.version>
+    <junit-jupiter.version>5.11.4</junit-jupiter.version>
   </properties>
-
-  <dependencyManagement>
-    <dependencies>
-      <dependency>
-        <groupId>${quarkus.platform.group-id}</groupId>
-        <artifactId>${quarkus.platform.artifact-id}</artifactId>
-        <version>${quarkus.platform.version}</version>
-        <type>pom</type>
-        <scope>import</scope>
-      </dependency>
-    </dependencies>
-  </dependencyManagement>
 </project>

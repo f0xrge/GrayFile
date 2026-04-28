@@ -137,7 +137,7 @@ powershell -ExecutionPolicy Bypass -File scripts/test-containers.ps1
 ## ext_proc benchmark rapide (p95/p99)
 
 ```bash
-python scripts/measure_ext_proc_overhead.py \
+java scripts/MeasureExtProcOverhead.java \
   --baseline-url http://localhost:8080/llm/v1/chat/completions \
   --ext-proc-url http://localhost:11000/llm/v1/chat/completions \
   --iterations 500
