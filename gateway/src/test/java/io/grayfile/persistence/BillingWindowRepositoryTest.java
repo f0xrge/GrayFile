@@ -25,8 +25,13 @@ class BillingWindowRepositoryTest {
     @BeforeEach
     void clean() throws Exception {
         userTransaction.begin();
-        billingWindowRepository.deleteAll();
-        userTransaction.commit();
+        try {
+            billingWindowRepository.deleteAll();
+            userTransaction.commit();
+        } catch (Exception exception) {
+            userTransaction.rollback();
+            throw exception;
+        }
     }
 
     @Test
@@ -79,6 +84,11 @@ class BillingWindowRepositoryTest {
             billingWindowRepository.persist(entity);
             userTransaction.commit();
         } catch (Exception exception) {
+            try {
+                userTransaction.rollback();
+            } catch (Exception ignored) {
+                // Preserve the original exception below.
+            }
             throw new RuntimeException(exception);
         }
     }
