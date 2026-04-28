@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.math.BigDecimal;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
@@ -76,6 +77,9 @@ class LlmProxyResourceTest {
 
     @Inject
     UserTransaction userTransaction;
+
+    @Inject
+    ModelRoutingService modelRoutingService;
 
     @BeforeEach
     void cleanAndSeedDatabase() throws Exception {

@@ -431,7 +431,7 @@ public class ManagementService {
         entity.timePrice = pricingService.normalizePrice(timePrice, "customer-model time price");
         entity.tokenPrice = pricingService.normalizePrice(tokenPrice, "customer-model token price");
         entity.updatedAt = Instant.now();
-        if (customerModelPricingRepository.getEntityManager().contains(entity) == false) {
+        if (oldState.isEmpty() && customerModelPricingRepository.getEntityManager().contains(entity) == false) {
             customerModelPricingRepository.persist(entity);
         }
 

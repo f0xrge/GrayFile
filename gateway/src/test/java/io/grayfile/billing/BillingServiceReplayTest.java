@@ -47,20 +47,25 @@ class BillingServiceReplayTest {
     @BeforeEach
     void cleanDatabase() throws Exception {
         userTransaction.begin();
-        billingWindowRepository.deleteAll();
-        usageEventRepository.deleteAll();
-        auditLogRepository.deleteAll();
-        auditExportStateRepository.deleteAll();
-        llmModelRepository.deleteAll();
-        LlmModelEntity model = new LlmModelEntity();
-        model.id = "gpt-4o-mini";
-        model.displayName = "GPT-4o Mini";
-        model.provider = "openai";
-        model.active = true;
-        model.defaultTimePrice = BigDecimal.ZERO.setScale(6);
-        model.defaultTokenPrice = BigDecimal.ZERO.setScale(6);
-        llmModelRepository.persist(model);
-        userTransaction.commit();
+        try {
+            billingWindowRepository.deleteAll();
+            usageEventRepository.deleteAll();
+            auditLogRepository.deleteAll();
+            auditExportStateRepository.deleteAll();
+            llmModelRepository.deleteAll();
+            LlmModelEntity model = new LlmModelEntity();
+            model.id = "gpt-4o-mini";
+            model.displayName = "GPT-4o Mini";
+            model.provider = "openai";
+            model.active = true;
+            model.defaultTimePrice = BigDecimal.ZERO.setScale(6);
+            model.defaultTokenPrice = BigDecimal.ZERO.setScale(6);
+            llmModelRepository.persist(model);
+            userTransaction.commit();
+        } catch (Exception exception) {
+            userTransaction.rollback();
+            throw exception;
+        }
     }
 
     @Test
