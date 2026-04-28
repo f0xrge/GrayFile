@@ -2,6 +2,7 @@ package io.grayfile.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.grayfile.backend.BackendGateway;
 import io.grayfile.backend.OpenAiRequestContext;
 import io.grayfile.api.usage.EndpointBillingPolicy;
@@ -108,22 +109,45 @@ public class InferenceOrchestrator {
                 }
 
                 UsageCaptureService.UsageCaptureDecision usageDecision = UsageCaptureService.UsageCaptureDecision.skippedReason("not_billable_endpoint");
-                if (billableEndpoint && envelope.jsonPayload() != null) {
+                if (billableEndpoint) {
+                    boolean streamingRequest = isStreamingRequest(requestContext);
                     UsageCaptureService.EdgeUsageExtraction edgeUsageExtraction = UsageCaptureService.EdgeUsageExtraction.fromHeaders(
                             backendResponse.getHeaderString("x-edge-usage-prompt-tokens"),
                             backendResponse.getHeaderString("x-edge-usage-completion-tokens"),
                             backendResponse.getHeaderString("x-edge-usage-total-tokens")
                     );
                     long usageDurationMs = Duration.between(startedAt, Instant.now()).toMillis();
-                    usageDecision = usageCaptureService.captureUsage(
-                            requestContext.customerId(),
-                            requestContext.apiKeyId(),
-                            requestId,
-                            usageDurationMs,
-                            endpoint,
-                            envelope.jsonPayload(),
-                            edgeUsageExtraction
-                    );
+
+                    if (streamingRequest) {
+                        if (edgeUsageExtraction.present()) {
+                            usageDecision = usageCaptureService.captureUsage(
+                                    requestContext.customerId(),
+                                    requestContext.apiKeyId(),
+                                    requestId,
+                                    usageDurationMs,
+                                    endpoint,
+                                    synthesizeStreamingPayload(modelId, edgeUsageExtraction),
+                                    edgeUsageExtraction
+                            );
+                        } else {
+                            usageDecision = UsageCaptureService.UsageCaptureDecision.skippedReason("stream_final_missing_usage");
+                            usageCaptureService.auditSkippedExtraction("stream_final_missing_usage", requestId, modelId, endpoint);
+                        }
+                    } else if (envelope.jsonPayload() != null) {
+                        usageDecision = usageCaptureService.captureUsage(
+                                requestContext.customerId(),
+                                requestContext.apiKeyId(),
+                                requestId,
+                                usageDurationMs,
+                                endpoint,
+                                envelope.jsonPayload(),
+                                edgeUsageExtraction
+                        );
+                    } else {
+                        usageDecision = UsageCaptureService.UsageCaptureDecision.skippedReason("incomplete_stream");
+                        usageCaptureService.auditSkippedExtraction("incomplete_stream", requestId, modelId, endpoint);
+                    }
+
                     if (!usageDecision.captured()) {
                         gatewayMetrics.recordUsageExtractionError(usageDecision.reason(), modelId);
                     }
@@ -233,6 +257,21 @@ public class InferenceOrchestrator {
         } catch (NumberFormatException ignored) {
             return 1;
         }
+    }
+
+    private boolean isStreamingRequest(OpenAiRequestContext requestContext) {
+        JsonNode requestBody = requestContext.requestBody();
+        return requestBody != null && requestBody.path("stream").asBoolean(false);
+    }
+
+    private JsonNode synthesizeStreamingPayload(String modelId, UsageCaptureService.EdgeUsageExtraction edgeUsageExtraction) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("model", modelId == null ? "unknown-model" : modelId);
+        ObjectNode usage = payload.putObject("usage");
+        usage.put("prompt_tokens", edgeUsageExtraction.inputTokens());
+        usage.put("completion_tokens", edgeUsageExtraction.outputTokens());
+        usage.put("total_tokens", edgeUsageExtraction.totalTokens());
+        return payload;
     }
 
     private record ResponseEnvelope(byte[] rawPayload, String contentType, JsonNode jsonPayload) {

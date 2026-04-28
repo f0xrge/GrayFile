@@ -45,6 +45,13 @@ Conséquence:
 - si ext_proc est indisponible / timeout / erreur gRPC, Envoy **laisse passer** la réponse backend,
 - GrayFile continue son parsing applicatif côté gateway (`UsageCaptureService`) et reste la source de vérité de facturation.
 
+### Fallback spécifique streaming/chunked
+
+- Pour les réponses SSE/chunked, ext_proc n’émet les headers `x-edge-usage-*` qu’à `end_of_stream=true`.
+- Si le flux n’est pas terminé côté ext_proc, le statut est `incomplete_stream` (audit + skip de capture tant que la métrique finale n’est pas disponible).
+- Si le flux se termine mais qu’aucun bloc final avec `usage.*` n’est trouvé, le statut est `stream_final_missing_usage`.
+- Dans ce dernier cas, la gateway ne persiste pas d’événement de consommation et journalise un audit explicite (`USAGE_EXTRACTION_AUDIT`) pour investigation backend/contrat.
+
 ## 5) Critères go / no-go selon SLO
 
 ### Go

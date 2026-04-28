@@ -37,7 +37,7 @@ def test_extract_usage_chunked_payload():
 
 def test_extract_usage_chunked_incomplete_stream():
     result = extract_usage_from_chunks([b'{"usage":{"prompt_tokens":12'], end_of_stream=False)
-    assert result.status == "incomplete_payload"
+    assert result.status == "incomplete_stream"
 
 
 def test_extract_usage_missing_usage():
@@ -48,3 +48,21 @@ def test_extract_usage_missing_usage():
 def test_extract_usage_invalid_usage_values():
     result = extract_usage(b'{"usage": {"prompt_tokens": -1, "completion_tokens": 3, "total_tokens": 2}}')
     assert result.status == "usage_invalid"
+
+
+def test_extract_usage_sse_stream_with_final_usage_chunk():
+    result = extract_usage_from_chunks([
+        b'data: {"id":"resp_1","type":"response.output_text.delta"}\n\n',
+        b'data: {"id":"resp_1","usage":{"prompt_tokens":9,"completion_tokens":5,"total_tokens":14}}\n\n',
+        b"data: [DONE]\n\n",
+    ], end_of_stream=True)
+    assert result.status == "ok"
+    assert result.total_tokens == 14
+
+
+def test_extract_usage_sse_stream_without_final_usage():
+    result = extract_usage_from_chunks([
+        b'data: {"id":"resp_1","type":"response.output_text.delta"}\n\n',
+        b"data: [DONE]\n\n",
+    ], end_of_stream=True)
+    assert result.status == "stream_final_missing_usage"

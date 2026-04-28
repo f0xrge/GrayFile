@@ -266,6 +266,65 @@ class LlmProxyResourceTest {
     }
 
     @Test
+    void shouldPersistUsageForStreamingResponsesFromEdgeFinalHeaders() {
+        when(backendGateway.proxy(anyString(), any())).thenReturn(Response.ok("""
+                data: {"id":"resp-stream","type":"response.output_text.delta"}
+
+                data: [DONE]
+
+                """)
+                .type("text/event-stream")
+                .header("x-edge-usage-prompt-tokens", "14")
+                .header("x-edge-usage-completion-tokens", "6")
+                .header("x-edge-usage-total-tokens", "20")
+                .build());
+
+        given()
+                .contentType("application/json")
+                .header("x-customer-id", "customer-1")
+                .header("x-api-key-id", "key-1")
+                .header("x-request-id", "req-stream-ok")
+                .body(Map.of("model", "gpt-4o-mini", "stream", true))
+                .when()
+                .post("/llm/v1/chat/completions")
+                .then()
+                .statusCode(200)
+                .header("x-grayfile-usage-capture", equalTo("captured"))
+                .header("x-grayfile-usage-contract-version", equalTo("usage_extraction.v2"));
+
+        assertEquals(1L, usageEventRepository.count());
+        assertEquals(20, billingWindowRepository.listAll().getFirst().tokenTotal);
+    }
+
+    @Test
+    void shouldAuditStreamingResponsesMissingFinalUsage() {
+        when(backendGateway.proxy(anyString(), any())).thenReturn(Response.ok("""
+                data: {"id":"resp-stream-missing","type":"response.output_text.delta"}
+
+                data: [DONE]
+
+                """)
+                .type("text/event-stream")
+                .build());
+
+        given()
+                .contentType("application/json")
+                .header("x-customer-id", "customer-1")
+                .header("x-api-key-id", "key-1")
+                .header("x-request-id", "req-stream-missing")
+                .body(Map.of("model", "gpt-4o-mini", "stream", true))
+                .when()
+                .post("/llm/v1/chat/completions")
+                .then()
+                .statusCode(200)
+                .header("x-grayfile-usage-capture", equalTo("stream_final_missing_usage"));
+
+        assertEquals(0L, usageEventRepository.count());
+        assertTrue(auditLogRepository.listFiltered("USAGE_EXTRACTION_AUDIT", null, null, "usage_extraction", "req-stream-missing", 10).stream()
+                .anyMatch(entry -> entry.payloadJson != null && entry.payloadJson.contains("stream_final_missing_usage")));
+    }
+
+    @Test
     void shouldRejectApiKeyThatDoesNotBelongToCustomer() {
         persistForeignApiKey();
 
