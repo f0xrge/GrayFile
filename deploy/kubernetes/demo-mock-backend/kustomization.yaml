@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: grayfile
+
+resources:
+  - ../postgres-statefulset
+  - mock-backend.yaml
+
+configMapGenerator:
+  - name: mock-backend-mappings
+    files:
+      - chat-completions.json=config/mappings/chat-completions.json
+      - health.json=config/mappings/health.json
+
+generatorOptions:
+  disableNameSuffixHash: true

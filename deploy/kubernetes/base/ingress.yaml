@@ -1,0 +1,55 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grayfile-ui
+  labels:
+    app.kubernetes.io/name: grayfile
+    app.kubernetes.io/component: management-ui
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: 2m
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - grayfile.example.com
+      secretName: grayfile-ui-tls
+  rules:
+    - host: grayfile.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: management-ui
+                port:
+                  name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grayfile-llm
+  labels:
+    app.kubernetes.io/name: grayfile
+    app.kubernetes.io/component: envoy
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: 2m
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - llm.grayfile.example.com
+      secretName: grayfile-llm-tls
+  rules:
+    - host: llm.grayfile.example.com
+      http:
+        paths:
+          - path: /llm/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: envoy
+                port:
+                  name: public-llm

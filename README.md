@@ -62,6 +62,16 @@ grayfile/
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
+## Deploy on Kubernetes
+
+Kubernetes manifests and a step-by-step deployment guide are available in `deploy/kubernetes/`.
+
+```bash
+kubectl kustomize deploy/kubernetes/managed-postgres
+kubectl kustomize deploy/kubernetes/postgres-statefulset
+kubectl kustomize deploy/kubernetes/demo-mock-backend
+```
+
 Services:
 
 - Gateway (direct, local only): `http://localhost:8080`

@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ext-proc
+  labels:
+    app.kubernetes.io/name: grayfile
+    app.kubernetes.io/component: ext-proc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grayfile
+      app.kubernetes.io/component: ext-proc
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grayfile
+        app.kubernetes.io/component: ext-proc
+    spec:
+      containers:
+        - name: ext-proc
+          image: registry.example.com/grayfile/ext-proc:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: grpc
+              containerPort: 18080
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ext-proc
+  labels:
+    app.kubernetes.io/name: grayfile
+    app.kubernetes.io/component: ext-proc
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: grayfile
+    app.kubernetes.io/component: ext-proc
+  ports:
+    - name: grpc
+      port: 18080
+      targetPort: grpc
