@@ -4,16 +4,19 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.grayfile.backend.BackendGateway;
 import io.grayfile.backend.OpenAiRequestContext;
+import io.grayfile.api.usage.EndpointBillingPolicy;
 import io.grayfile.metrics.GatewayMetricsRecorder;
 import io.grayfile.service.AuditLogService;
 import io.grayfile.service.ManagementService;
 import io.grayfile.service.ModelRoutingService;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -30,6 +33,7 @@ public class InferenceOrchestrator {
     private final AuditLogService auditLogService;
     private final UsageCaptureService usageCaptureService;
     private final ObjectMapper objectMapper;
+    private final EndpointBillingPolicy endpointBillingPolicy;
 
     public InferenceOrchestrator(BackendGateway backendGateway,
                                  ModelRoutingService modelRoutingService,
@@ -37,7 +41,8 @@ public class InferenceOrchestrator {
                                  GatewayMetricsRecorder gatewayMetrics,
                                  AuditLogService auditLogService,
                                  UsageCaptureService usageCaptureService,
-                                 ObjectMapper objectMapper) {
+                                 ObjectMapper objectMapper,
+                                 EndpointBillingPolicy endpointBillingPolicy) {
         this.backendGateway = backendGateway;
         this.modelRoutingService = modelRoutingService;
         this.managementService = managementService;
@@ -45,13 +50,16 @@ public class InferenceOrchestrator {
         this.auditLogService = auditLogService;
         this.usageCaptureService = usageCaptureService;
         this.objectMapper = objectMapper;
+        this.endpointBillingPolicy = endpointBillingPolicy;
     }
 
     public Response proxy(OpenAiRequestContext requestContext) {
         OpenAiEndpoint endpoint = requestContext.endpoint();
         String modelId = requestContext.modelId();
 
-        ManagementService.UsageScopeValidation validation = endpoint.billable()
+        boolean billableEndpoint = endpointBillingPolicy.isBillable(endpoint);
+
+        ManagementService.UsageScopeValidation validation = billableEndpoint
                 ? managementService.validateUsageScope(requestContext.customerId(), requestContext.apiKeyId(), modelId)
                 : managementService.validateCustomerApiScope(requestContext.customerId(), requestContext.apiKeyId());
         if (!validation.valid()) {
@@ -100,7 +108,7 @@ public class InferenceOrchestrator {
                 }
 
                 UsageCaptureService.UsageCaptureDecision usageDecision = UsageCaptureService.UsageCaptureDecision.skippedReason("not_billable_endpoint");
-                if (endpoint.billable() && envelope.jsonPayload() != null) {
+                if (billableEndpoint && envelope.jsonPayload() != null) {
                     UsageCaptureService.EdgeUsageExtraction edgeUsageExtraction = UsageCaptureService.EdgeUsageExtraction.fromHeaders(
                             backendResponse.getHeaderString("x-edge-usage-prompt-tokens"),
                             backendResponse.getHeaderString("x-edge-usage-completion-tokens"),
@@ -112,6 +120,7 @@ public class InferenceOrchestrator {
                             requestContext.apiKeyId(),
                             requestId,
                             usageDurationMs,
+                            endpoint,
                             envelope.jsonPayload(),
                             edgeUsageExtraction
                     );
@@ -129,7 +138,7 @@ public class InferenceOrchestrator {
                         .header("x-request-id", requestId)
                         .header("x-backend-id", route.backendId());
 
-                if (endpoint.billable()) {
+                if (billableEndpoint) {
                     responseBuilder.header("x-grayfile-usage-capture", usageDecision.reason());
                     if (usageDecision.contractVersion() != null) {
                         responseBuilder.header("x-grayfile-usage-contract-version", usageDecision.contractVersion());
@@ -229,7 +238,7 @@ public class InferenceOrchestrator {
     private record ResponseEnvelope(byte[] rawPayload, String contentType, JsonNode jsonPayload) {
 
         static ResponseEnvelope from(Response backendResponse, ObjectMapper objectMapper) {
-            byte[] body = backendResponse.hasEntity() ? backendResponse.readEntity(byte[].class) : new byte[0];
+            byte[] body = readBody(backendResponse, objectMapper);
             String contentType = MediaType.APPLICATION_JSON;
             MediaType mediaType = backendResponse.getMediaType();
             if (mediaType != null) {
@@ -245,6 +254,40 @@ public class InferenceOrchestrator {
                 }
             }
             return new ResponseEnvelope(body, contentType, json);
+        }
+
+        private static byte[] readBody(Response backendResponse, ObjectMapper objectMapper) {
+            if (!backendResponse.hasEntity()) {
+                return new byte[0];
+            }
+
+            Object entity = backendResponse.getEntity();
+            if (entity instanceof byte[] bytes) {
+                return bytes;
+            }
+            if (entity instanceof String text) {
+                return text.getBytes(StandardCharsets.UTF_8);
+            }
+            if (entity instanceof JsonNode jsonNode) {
+                try {
+                    return objectMapper.writeValueAsBytes(jsonNode);
+                } catch (IOException ignored) {
+                    return new byte[0];
+                }
+            }
+            if (entity != null) {
+                try {
+                    return objectMapper.writeValueAsBytes(entity);
+                } catch (IOException ignored) {
+                    return new byte[0];
+                }
+            }
+
+            try {
+                return backendResponse.readEntity(byte[].class);
+            } catch (ProcessingException ignored) {
+                return new byte[0];
+            }
         }
     }
 }
