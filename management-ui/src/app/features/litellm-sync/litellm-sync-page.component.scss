@@ -3,6 +3,10 @@
   padding: 28px;
 }
 
+.hero {
+  border-top: 8px solid var(--gf-cyan);
+}
+
 .status-grid {
   display: grid;
   gap: 16px;
@@ -14,16 +18,27 @@
   border: 1px solid var(--gf-border);
   border-radius: 8px;
   padding: 14px;
+  background: #ffffff;
 }
 
 .metric-tile {
   display: grid;
   gap: 6px;
+  box-shadow: inset 4px 0 0 var(--gf-brand);
+}
+
+.metric-tile:nth-child(2) {
+  box-shadow: inset 4px 0 0 var(--gf-cyan);
+}
+
+.metric-tile:nth-child(3) {
+  box-shadow: inset 4px 0 0 var(--gf-salmon);
 }
 
 .sync-row {
   align-items: center;
   display: flex;
+  gap: 18px;
   justify-content: space-between;
 }
 

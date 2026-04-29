@@ -3,13 +3,14 @@
   gap: 24px;
   padding: 32px;
   grid-template-columns: minmax(0, 1.3fr) minmax(280px, 420px);
+  border-top: 8px solid var(--gf-brand);
 }
 
 .hero-panel {
   align-self: stretch;
   padding: 24px;
-  border-radius: 24px;
-  background: linear-gradient(180deg, rgba(16, 21, 16, 0.94), rgba(16, 21, 16, 0.82));
+  border-radius: 8px;
+  background: var(--gf-brand-deep);
   color: white;
   display: grid;
   gap: 16px;
@@ -17,10 +18,10 @@
 
 .hero-panel-label {
   margin-bottom: 12px;
-  color: var(--gf-brand);
+  color: var(--gf-yellow);
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 
 .metrics-grid,
@@ -43,12 +44,16 @@
   place-items: center;
   width: 48px;
   height: 48px;
-  border-radius: 16px;
-  background: rgba(199, 240, 0, 0.22);
+  border: 1px solid rgba(87, 62, 239, 0.18);
+  border-radius: 8px;
+  background: #f4f1ff;
+  color: var(--gf-brand);
 }
 
 .metric-card strong {
-  font-size: 2.3rem;
+  color: var(--gf-brand-deep);
+  font-size: 2.25rem;
+  font-weight: 800;
 }
 
 .hero-kpi {
@@ -86,8 +91,8 @@
 .bar-track {
   position: relative;
   height: 12px;
-  border-radius: 999px;
-  background: rgba(17, 24, 39, 0.08);
+  border-radius: 8px;
+  background: rgba(62, 13, 129, 0.09);
   overflow: hidden;
 }
 
@@ -95,11 +100,11 @@
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, #1e7f53, #95d300);
+  background: var(--gf-brand);
 }
 
 .bar-fill.is-secondary {
-  background: linear-gradient(90deg, #0f766e, #34d399);
+  background: var(--gf-brand-vivid);
 }
 
 .combos-card {
@@ -115,7 +120,7 @@
   color: var(--gf-muted);
   font-size: 0.9rem;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 
 .combo-header,

@@ -4,10 +4,16 @@
   padding: 28px;
 }
 
+.hero {
+  border-top: 8px solid var(--gf-brand-vivid);
+}
+
 .sync-panel {
   border: 1px solid var(--gf-border);
   border-radius: 8px;
   display: grid;
   gap: 6px;
   padding: 14px;
+  background: #fbfaff;
+  box-shadow: inset 4px 0 0 var(--gf-cyan);
 }

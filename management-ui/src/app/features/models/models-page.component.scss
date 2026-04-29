@@ -4,6 +4,10 @@
   padding: 28px;
 }
 
+.hero {
+  border-top: 8px solid var(--gf-yellow);
+}
+
 .route-card {
   cursor: default;
 }
@@ -38,7 +42,9 @@
   width: 88px;
   padding: 10px 12px;
   border: 1px solid var(--gf-border);
-  border-radius: 12px;
+  border-radius: 8px;
+  color: var(--gf-brand-deep);
+  font-weight: 700;
 }
 
 .form-hint {
