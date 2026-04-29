@@ -26,6 +26,15 @@ export interface ModelRoute {
   modelId: string;
   backendId: string;
   baseUrl: string;
+  deploymentId: string | null;
+  provider: string | null;
+  liteLlmModel: string | null;
+  apiBase: string | null;
+  apiVersion: string | null;
+  secretRef: string | null;
+  lastSyncStatus: string | null;
+  lastSyncError: string | null;
+  lastSyncedAt: string | null;
   weight: number;
   active: boolean;
   version: number;
@@ -77,4 +86,30 @@ export interface AuditHeadersInput {
   actorId?: string;
   changeReason?: string;
   secondApproverId?: string;
+}
+
+export interface LiteLlmResource {
+  id: string;
+  entityType: string;
+  entityId: string;
+  liteLlmResourceType: string;
+  liteLlmResourceId: string | null;
+  lastSyncStatus: string;
+  lastSyncError: string | null;
+  lastSyncedAt: string | null;
+  updatedAt: string;
+}
+
+export interface LiteLlmHealth {
+  healthy: boolean;
+  mode: string | null;
+  error: string | null;
+}
+
+export interface LiteLlmReconciliation {
+  attempted: number;
+  failed: number;
+  completedAt: string;
+  syncEnabled: boolean;
+  dryRun: boolean;
 }

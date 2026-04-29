@@ -27,6 +27,33 @@ public class ModelRouteEntity extends PanacheEntityBase {
     @Column(name = "base_url", nullable = false)
     public String baseUrl;
 
+    @Column(name = "deployment_id")
+    public String deploymentId;
+
+    @Column
+    public String provider;
+
+    @Column(name = "litellm_model")
+    public String liteLlmModel;
+
+    @Column(name = "api_base")
+    public String apiBase;
+
+    @Column(name = "api_version")
+    public String apiVersion;
+
+    @Column(name = "secret_ref")
+    public String secretRef;
+
+    @Column(name = "last_sync_status", nullable = false)
+    public String lastSyncStatus = "pending";
+
+    @Column(name = "last_sync_error")
+    public String lastSyncError;
+
+    @Column(name = "last_synced_at")
+    public Instant lastSyncedAt;
+
     @Column(nullable = false)
     public int weight;
 

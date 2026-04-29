@@ -29,6 +29,13 @@
               <span class="status-pill" [class.is-inactive]="!apiKey.active">
                 {{ apiKey.active ? 'Active' : 'Inactive' }}
               </span>
+              @if (syncStatus(apiKey.id); as sync) {
+                <span class="status-pill" [class.is-inactive]="sync.lastSyncStatus !== 'synced'">
+                  LiteLLM {{ sync.lastSyncStatus }}
+                </span>
+              } @else {
+                <span class="status-pill is-inactive">LiteLLM pending</span>
+              }
             </button>
           } @empty {
             <div class="empty-state">Aucune API key disponible.</div>
@@ -94,6 +101,17 @@
             <button mat-stroked-button color="warn" (click)="deactivateApiKey()">Desactiver</button>
           }
         </div>
+
+        @if (selectedApiKey() && syncStatus(selectedApiKey()!.id); as sync) {
+          <div class="sync-panel">
+            <div class="eyebrow">LiteLLM virtual key</div>
+            <strong>{{ sync.lastSyncStatus }}</strong>
+            <span>{{ sync.liteLlmResourceId || 'resource non provisionnee' }}</span>
+            @if (sync.lastSyncError) {
+              <span>{{ sync.lastSyncError }}</span>
+            }
+          </div>
+        }
       </mat-card-content>
     </mat-card>
   </section>

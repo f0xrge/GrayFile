@@ -15,12 +15,14 @@ import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 @ApplicationScoped
 public class InferenceOrchestrator {
@@ -35,6 +37,9 @@ public class InferenceOrchestrator {
     private final UsageCaptureService usageCaptureService;
     private final ObjectMapper objectMapper;
     private final EndpointBillingPolicy endpointBillingPolicy;
+    private final String backendMode;
+    private final String liteLlmBaseUrl;
+    private final String liteLlmMasterKey;
 
     public InferenceOrchestrator(BackendGateway backendGateway,
                                  ModelRoutingService modelRoutingService,
@@ -43,7 +48,10 @@ public class InferenceOrchestrator {
                                  AuditLogService auditLogService,
                                  UsageCaptureService usageCaptureService,
                                  ObjectMapper objectMapper,
-                                 EndpointBillingPolicy endpointBillingPolicy) {
+                                 EndpointBillingPolicy endpointBillingPolicy,
+                                 @ConfigProperty(name = "grayfile.backend.mode") String backendMode,
+                                 @ConfigProperty(name = "grayfile.litellm.base-url") String liteLlmBaseUrl,
+                                 @ConfigProperty(name = "grayfile.litellm.master-key") String liteLlmMasterKey) {
         this.backendGateway = backendGateway;
         this.modelRoutingService = modelRoutingService;
         this.managementService = managementService;
@@ -52,6 +60,9 @@ public class InferenceOrchestrator {
         this.usageCaptureService = usageCaptureService;
         this.objectMapper = objectMapper;
         this.endpointBillingPolicy = endpointBillingPolicy;
+        this.backendMode = backendMode == null ? "direct" : backendMode.trim().toLowerCase();
+        this.liteLlmBaseUrl = trimTrailingSlash(liteLlmBaseUrl);
+        this.liteLlmMasterKey = liteLlmMasterKey;
     }
 
     public Response proxy(OpenAiRequestContext requestContext) {
@@ -74,6 +85,8 @@ public class InferenceOrchestrator {
         String requestId = requestContext.requestId();
         Instant startedAt = requestContext.startedAt();
 
+        boolean liteLlmMode = "litellm".equals(backendMode);
+
         auditLogService.logEvent(
                 "MODEL_ROUTING_DECISION",
                 "gateway-router",
@@ -84,10 +97,14 @@ public class InferenceOrchestrator {
                         "api_key_id", requestContext.apiKeyId(),
                         "model", modelId,
                         "endpoint", endpoint.path(),
-                        "decision", "route_to_backend"
+                        "decision", liteLlmMode ? "route_to_litellm" : "route_to_backend"
                 ),
                 startedAt
         );
+
+        if (liteLlmMode) {
+            return proxyLiteLlm(requestContext, billableEndpoint, requestId, startedAt, endpoint, modelId);
+        }
 
         List<ModelRoutingService.RouteTarget> routes = modelRoutingService.resolveCandidates(modelId);
         if (routes.isEmpty()) {
@@ -199,6 +216,109 @@ public class InferenceOrchestrator {
                 .build();
     }
 
+    private Response proxyLiteLlm(OpenAiRequestContext requestContext,
+                                  boolean billableEndpoint,
+                                  String requestId,
+                                  Instant startedAt,
+                                  OpenAiEndpoint endpoint,
+                                  String modelId) {
+        try (Response backendResponse = backendGateway.proxy(
+                liteLlmBaseUrl,
+                requestContext,
+                Map.of(
+                        "Authorization", "Bearer " + liteLlmMasterKey,
+                        "x-grayfile-customer-id", requestContext.customerId(),
+                        "x-grayfile-api-key-id", requestContext.apiKeyId()
+                ))) {
+            ResponseEnvelope envelope = ResponseEnvelope.from(backendResponse, objectMapper);
+
+            UsageCaptureService.UsageCaptureDecision usageDecision = UsageCaptureService.UsageCaptureDecision.skippedReason("not_billable_endpoint");
+            if (billableEndpoint && backendResponse.getStatus() < 500) {
+                boolean streamingRequest = isStreamingRequest(requestContext);
+                UsageCaptureService.EdgeUsageExtraction edgeUsageExtraction = UsageCaptureService.EdgeUsageExtraction.fromHeaders(
+                        backendResponse.getHeaderString("x-edge-usage-prompt-tokens"),
+                        backendResponse.getHeaderString("x-edge-usage-completion-tokens"),
+                        backendResponse.getHeaderString("x-edge-usage-total-tokens")
+                );
+                long usageDurationMs = Duration.between(startedAt, Instant.now()).toMillis();
+
+                if (streamingRequest) {
+                    if (edgeUsageExtraction.present()) {
+                        usageDecision = usageCaptureService.captureUsage(
+                                requestContext.customerId(),
+                                requestContext.apiKeyId(),
+                                requestId,
+                                usageDurationMs,
+                                endpoint,
+                                synthesizeStreamingPayload(modelId, edgeUsageExtraction),
+                                edgeUsageExtraction
+                        );
+                    } else {
+                        usageDecision = UsageCaptureService.UsageCaptureDecision.skippedReason("stream_final_missing_usage");
+                        usageCaptureService.auditSkippedExtraction("stream_final_missing_usage", requestId, modelId, endpoint);
+                    }
+                } else if (envelope.jsonPayload() != null) {
+                    usageDecision = usageCaptureService.captureUsage(
+                            requestContext.customerId(),
+                            requestContext.apiKeyId(),
+                            requestId,
+                            usageDurationMs,
+                            endpoint,
+                            envelope.jsonPayload(),
+                            edgeUsageExtraction
+                    );
+                } else {
+                    usageDecision = UsageCaptureService.UsageCaptureDecision.skippedReason("incomplete_stream");
+                    usageCaptureService.auditSkippedExtraction("incomplete_stream", requestId, modelId, endpoint);
+                }
+
+                if (!usageDecision.captured()) {
+                    gatewayMetrics.recordUsageExtractionError(usageDecision.reason(), modelId);
+                }
+            }
+
+            observeAndLog(startedAt, requestId, requestContext.customerId(), requestContext.apiKeyId(), modelId, backendResponse);
+
+            Response.ResponseBuilder responseBuilder = Response.status(backendResponse.getStatus())
+                    .entity(envelope.rawPayload())
+                    .header("Content-Type", envelope.contentType())
+                    .header("x-grayfile-gateway", "grayfile-gateway")
+                    .header("x-request-id", requestId)
+                    .header("x-backend-id", "litellm");
+
+            if (billableEndpoint) {
+                responseBuilder.header("x-grayfile-usage-capture", usageDecision.reason());
+                if (usageDecision.contractVersion() != null) {
+                    responseBuilder.header("x-grayfile-usage-contract-version", usageDecision.contractVersion());
+                }
+                if (usageDecision.extractorVersion() != null) {
+                    responseBuilder.header("x-grayfile-usage-extractor-version", usageDecision.extractorVersion());
+                }
+                if (usageDecision.divergenceDetected()) {
+                    responseBuilder.header("x-grayfile-usage-divergence", "edge_backend_mismatch");
+                }
+            }
+
+            return responseBuilder.build();
+        } catch (Exception exception) {
+            long latencyNanos = Duration.between(startedAt, Instant.now()).toNanos();
+            gatewayMetrics.recordRequestLatency(modelId, requestContext.customerId(), requestContext.apiKeyId(), 500, latencyNanos);
+            gatewayMetrics.recordApplicationError("litellm_gateway_exception", modelId, "500");
+            LOG.errorf(exception,
+                    "{\"event\":\"gateway_request\",\"request_id\":\"%s\",\"customer_id\":\"%s\",\"api_key_id\":\"%s\",\"model\":\"%s\",\"endpoint\":\"%s\",\"backend\":\"litellm\",\"backend_status\":500,\"latency_ms\":%d}",
+                    requestId,
+                    requestContext.customerId(),
+                    requestContext.apiKeyId(),
+                    modelId,
+                    endpoint.path(),
+                    Duration.ofNanos(latencyNanos).toMillis());
+            return Response.serverError()
+                    .entity("gateway failed to call LiteLLM")
+                    .header("x-request-id", requestId)
+                    .build();
+        }
+    }
+
     private void observeAndLog(Instant startedAt,
                                String requestId,
                                String customerId,
@@ -272,6 +392,14 @@ public class InferenceOrchestrator {
         usage.put("completion_tokens", edgeUsageExtraction.outputTokens());
         usage.put("total_tokens", edgeUsageExtraction.totalTokens());
         return payload;
+    }
+
+    private String trimTrailingSlash(String value) {
+        if (value == null || value.isBlank()) {
+            return "http://localhost:4000";
+        }
+        String trimmed = value.trim();
+        return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
     }
 
     private record ResponseEnvelope(byte[] rawPayload, String contentType, JsonNode jsonPayload) {

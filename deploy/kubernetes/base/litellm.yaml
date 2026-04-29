@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  labels:
+    app.kubernetes.io/name: grayfile
+    app.kubernetes.io/component: litellm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grayfile
+      app.kubernetes.io/component: litellm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grayfile
+        app.kubernetes.io/component: litellm
+    spec:
+      containers:
+        - name: litellm
+          image: docker.litellm.ai/berriai/litellm:main-latest
+          imagePullPolicy: IfNotPresent
+          args: ["--config", "/app/config.yaml", "--port", "4000"]
+          ports:
+            - name: http
+              containerPort: 4000
+          envFrom:
+            - secretRef:
+                name: grayfile-litellm-secret
+          volumeMounts:
+            - name: litellm-config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: litellm-config
+          configMap:
+            name: litellm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  labels:
+    app.kubernetes.io/name: grayfile
+    app.kubernetes.io/component: litellm
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: grayfile
+    app.kubernetes.io/component: litellm
+  ports:
+    - name: http
+      port: 4000
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: litellm-internal-only
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: grayfile
+      app.kubernetes.io/component: litellm
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grayfile
+              app.kubernetes.io/component: gateway
+      ports:
+        - protocol: TCP
+          port: 4000

@@ -11,6 +11,7 @@ import io.grayfile.persistence.AuditLogRepository;
 import io.grayfile.persistence.BillingWindowRepository;
 import io.grayfile.persistence.CustomerRepository;
 import io.grayfile.persistence.CustomerModelPricingRepository;
+import io.grayfile.persistence.LiteLlmResourceRepository;
 import io.grayfile.persistence.LlmModelRepository;
 import io.grayfile.persistence.UsageEventRepository;
 import io.quarkus.test.junit.QuarkusTest;
@@ -58,6 +59,9 @@ class ManagementResourceTest {
     AuditExportStateRepository auditExportStateRepository;
 
     @Inject
+    LiteLlmResourceRepository liteLlmResourceRepository;
+
+    @Inject
     UserTransaction userTransaction;
 
     @BeforeEach
@@ -68,6 +72,7 @@ class ManagementResourceTest {
             usageEventRepository.deleteAll();
             auditLogRepository.deleteAll();
             auditExportStateRepository.deleteAll();
+            liteLlmResourceRepository.deleteAll();
             customerModelPricingRepository.deleteAll();
             apiKeyRepository.deleteAll();
             llmModelRepository.deleteAll();
@@ -529,6 +534,82 @@ class ManagementResourceTest {
                 .body("[0].backendId", equalTo("backend-a"));
     }
 
+    @Test
+    void shouldExposeLiteLlmSyncResources() {
+        given()
+                .contentType("application/json")
+                .body(Map.of("id", "customer-1", "name", "Acme"))
+                .when()
+                .post("/management/v1/customers")
+                .then()
+                .statusCode(201);
+
+        given()
+                .contentType("application/json")
+                .body(Map.of(
+                        "id", "gpt-4o-mini",
+                        "displayName", "GPT-4o Mini",
+                        "provider", "openai",
+                        "defaultTimeCriterionSeconds", 600,
+                        "defaultTimePrice", 10,
+                        "defaultTokenCriterion", 1000,
+                        "defaultTokenPrice", 2
+                ))
+                .when()
+                .post("/management/v1/models")
+                .then()
+                .statusCode(201);
+
+        given()
+                .contentType("application/json")
+                .body(Map.of("id", "key-1", "customerId", "customer-1", "name", "Primary key"))
+                .when()
+                .post("/management/v1/api-keys")
+                .then()
+                .statusCode(201);
+
+        given()
+                .contentType("application/json")
+                .body(Map.of("backendId", "backend-a", "baseUrl", "http://backend-a:18080", "weight", 90, "active", true))
+                .when()
+                .post("/management/v1/models/gpt-4o-mini/routes")
+                .then()
+                .statusCode(201)
+                .body("lastSyncStatus", equalTo("synced"));
+
+        given()
+                .when()
+                .get("/management/v1/litellm/resources")
+                .then()
+                .statusCode(200)
+                .body("$", hasSize(2))
+                .body("entityType", hasItems("api_key", "model_route"))
+                .body("lastSyncStatus", hasItems("synced"));
+
+        given()
+                .when()
+                .get("/management/v1/litellm/health")
+                .then()
+                .statusCode(200)
+                .body("healthy", equalTo(true));
+    }
+
+    @Test
+    void shouldRunLiteLlmReconciliationInDryRunMode() {
+        seedManagementScopeUnchecked();
+
+        given()
+                .contentType("application/json")
+                .body(Map.of())
+                .when()
+                .post("/management/v1/litellm/reconcile")
+                .then()
+                .statusCode(200)
+                .body("attempted", equalTo(3))
+                .body("failed", equalTo(0))
+                .body("dryRun", equalTo(true));
+    }
+
     private void seedManagementScope() throws Exception {
         userTransaction.begin();
 
@@ -560,6 +641,14 @@ class ManagementResourceTest {
         persistApiKey("key-3", "customer-2", "Key Three");
 
         userTransaction.commit();
+    }
+
+    private void seedManagementScopeUnchecked() {
+        try {
+            seedManagementScope();
+        } catch (Exception exception) {
+            throw new RuntimeException(exception);
+        }
     }
 
     private void persistApiKey(String id, String customerId, String name) {

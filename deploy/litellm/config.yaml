@@ -1,0 +1,13 @@
+model_list:
+  - model_name: grayfile-demo
+    litellm_params:
+      model: openai/grayfile-demo
+      api_base: os.environ/MOCK_BACKEND_API_BASE
+      api_key: os.environ/MOCK_BACKEND_API_KEY
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+
+litellm_settings:
+  drop_params: true

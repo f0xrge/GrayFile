@@ -1,0 +1,34 @@
+.hero,
+.content-card mat-card-content {
+  padding: 28px;
+}
+
+.status-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.metric-tile,
+.sync-row {
+  border: 1px solid var(--gf-border);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.metric-tile {
+  display: grid;
+  gap: 6px;
+}
+
+.sync-row {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+@media (max-width: 900px) {
+  .status-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -7,8 +7,11 @@ import io.grayfile.domain.AuditLogEntity;
 import io.grayfile.domain.BillingWindowEntity;
 import io.grayfile.domain.CustomerEntity;
 import io.grayfile.domain.CustomerModelPricingEntity;
+import io.grayfile.domain.LiteLlmResourceEntity;
 import io.grayfile.domain.LlmModelEntity;
 import io.grayfile.domain.ModelRouteEntity;
+import io.grayfile.litellm.LiteLlmAdminClient;
+import io.grayfile.litellm.LiteLlmSyncService;
 import io.grayfile.service.ManagementService;
 import io.grayfile.service.UsageAnalyticsService;
 import jakarta.ws.rs.BadRequestException;
@@ -39,10 +42,14 @@ import java.util.UUID;
 public class ManagementResource {
 
     private final ManagementService managementService;
+    private final LiteLlmSyncService liteLlmSyncService;
     private final ObjectMapper objectMapper;
 
-    public ManagementResource(ManagementService managementService, ObjectMapper objectMapper) {
+    public ManagementResource(ManagementService managementService,
+                              LiteLlmSyncService liteLlmSyncService,
+                              ObjectMapper objectMapper) {
         this.managementService = managementService;
+        this.liteLlmSyncService = liteLlmSyncService;
         this.objectMapper = objectMapper;
     }
 
@@ -205,11 +212,42 @@ public class ManagementResource {
                 modelId,
                 request.backendId(),
                 request.baseUrl(),
+                request.provider(),
+                request.liteLlmModel(),
+                request.apiBase(),
+                request.apiVersion(),
+                request.secretRef(),
                 request.weight(),
                 request.active(),
                 auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
         );
+        liteLlmSyncService.syncModelRoute(entity, normalizedActor(actorId), normalizedRequestId(requestId));
         return Response.status(Response.Status.CREATED).entity(ModelRouteResponse.from(entity)).build();
+    }
+
+    @PUT
+    @Path("/models/{modelId}/routes/{backendId}/deployment")
+    public ModelRouteResponse updateModelRouteDeployment(@PathParam("modelId") String modelId,
+                                                         @PathParam("backendId") String backendId,
+                                                         ModelRouteDeploymentRequest request,
+                                                         @HeaderParam("x-actor-id") String actorId,
+                                                         @HeaderParam("x-source-ip") String sourceIp,
+                                                         @HeaderParam("x-request-id") String requestId,
+                                                         @HeaderParam("x-change-reason") String reason,
+                                                         @HeaderParam("x-second-approver-id") String secondApproverId,
+                                                         @HeaderParam("x-bulk-change-size") Integer bulkChangeSize) {
+        ModelRouteEntity entity = managementService.updateModelRouteDeployment(
+                modelId,
+                backendId,
+                request.provider(),
+                request.liteLlmModel(),
+                request.apiBase(),
+                request.apiVersion(),
+                request.secretRef(),
+                auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
+        );
+        liteLlmSyncService.syncModelRoute(entity, normalizedActor(actorId), normalizedRequestId(requestId));
+        return ModelRouteResponse.from(entity);
     }
 
     @PUT
@@ -344,6 +382,7 @@ public class ManagementResource {
                 request.active(),
                 auditContext(actorId, sourceIp, requestId, reason, request.changeType(), secondApproverId, bulkChangeSize)
         );
+        liteLlmSyncService.syncApiKey(entity, normalizedActor(actorId), normalizedRequestId(requestId));
         return Response.status(Response.Status.CREATED).entity(ApiKeyResponse.from(entity)).build();
     }
 
@@ -375,10 +414,12 @@ public class ManagementResource {
                                            @HeaderParam("x-second-approver-id") String secondApproverId,
                                            @HeaderParam("x-bulk-change-size") Integer bulkChangeSize,
                                            @QueryParam("changeType") String changeType) {
-        return ApiKeyResponse.from(managementService.deactivateApiKey(
+        ApiKeyEntity entity = managementService.deactivateApiKey(
                 apiKeyId,
                 auditContext(actorId, sourceIp, requestId, reason, changeType, secondApproverId, bulkChangeSize)
-        ));
+        );
+        liteLlmSyncService.disableApiKey(entity, normalizedActor(actorId), normalizedRequestId(requestId));
+        return ApiKeyResponse.from(entity);
     }
 
     @GET
@@ -437,6 +478,36 @@ public class ManagementResource {
         );
     }
 
+    @GET
+    @Path("/litellm/resources")
+    public List<LiteLlmResourceResponse> listLiteLlmResources() {
+        return liteLlmSyncService.listResources().stream().map(LiteLlmResourceResponse::from).toList();
+    }
+
+    @GET
+    @Path("/litellm/health")
+    public LiteLlmHealthResponse liteLlmHealth() {
+        LiteLlmAdminClient.LiteLlmCallResult result = liteLlmSyncService.health();
+        return new LiteLlmHealthResponse(result.success(), result.resourceId(), result.error());
+    }
+
+    @POST
+    @Path("/litellm/reconcile")
+    public LiteLlmReconciliationResponse reconcileLiteLlm(@HeaderParam("x-actor-id") String actorId,
+                                                          @HeaderParam("x-request-id") String requestId) {
+        LiteLlmSyncService.ReconciliationResult result = liteLlmSyncService.reconcile(
+                normalizedActor(actorId),
+                normalizedRequestId(requestId)
+        );
+        return new LiteLlmReconciliationResponse(
+                result.attempted(),
+                result.failed(),
+                result.completedAt(),
+                result.syncEnabled(),
+                result.dryRun()
+        );
+    }
+
     public record CustomerUpsertRequest(String id, String name, Boolean active, String changeType) {
     }
 
@@ -470,13 +541,30 @@ public class ManagementResource {
     public record ApiKeyUpdateRequest(String name, Boolean active, String changeType) {
     }
 
-    public record ModelRouteUpsertRequest(String backendId, String baseUrl, Integer weight, Boolean active, String changeType) {
+    public record ModelRouteUpsertRequest(String backendId,
+                                          String baseUrl,
+                                          String provider,
+                                          String liteLlmModel,
+                                          String apiBase,
+                                          String apiVersion,
+                                          String secretRef,
+                                          Integer weight,
+                                          Boolean active,
+                                          String changeType) {
     }
 
     public record ModelRouteActiveRequest(boolean active, String changeType) {
     }
 
     public record ModelRouteWeightRequest(int weight, String changeType) {
+    }
+
+    public record ModelRouteDeploymentRequest(String provider,
+                                              String liteLlmModel,
+                                              String apiBase,
+                                              String apiVersion,
+                                              String secretRef,
+                                              String changeType) {
     }
 
     public record CustomerModelPricingUpsertRequest(Integer timeCriterionSeconds,
@@ -523,12 +611,38 @@ public class ManagementResource {
     public record ModelRouteResponse(String modelId,
                                      String backendId,
                                      String baseUrl,
+                                     String deploymentId,
+                                     String provider,
+                                     String liteLlmModel,
+                                     String apiBase,
+                                     String apiVersion,
+                                     String secretRef,
+                                     String lastSyncStatus,
+                                     String lastSyncError,
+                                     Instant lastSyncedAt,
                                      int weight,
                                      boolean active,
                                      int version,
                                      Instant updatedAt) {
         static ModelRouteResponse from(ModelRouteEntity entity) {
-            return new ModelRouteResponse(entity.modelId, entity.backendId, entity.baseUrl, entity.weight, entity.active, entity.version, entity.updatedAt);
+            return new ModelRouteResponse(
+                    entity.modelId,
+                    entity.backendId,
+                    entity.baseUrl,
+                    entity.deploymentId,
+                    entity.provider,
+                    entity.liteLlmModel,
+                    entity.apiBase,
+                    entity.apiVersion,
+                    entity.secretRef,
+                    entity.lastSyncStatus,
+                    entity.lastSyncError,
+                    entity.lastSyncedAt,
+                    entity.weight,
+                    entity.active,
+                    entity.version,
+                    entity.updatedAt
+            );
         }
     }
 
@@ -588,6 +702,40 @@ public class ManagementResource {
                                      String signature) {
     }
 
+    public record LiteLlmResourceResponse(String id,
+                                          String entityType,
+                                          String entityId,
+                                          String liteLlmResourceType,
+                                          String liteLlmResourceId,
+                                          String lastSyncStatus,
+                                          String lastSyncError,
+                                          Instant lastSyncedAt,
+                                          Instant updatedAt) {
+        static LiteLlmResourceResponse from(LiteLlmResourceEntity entity) {
+            return new LiteLlmResourceResponse(
+                    entity.id.toString(),
+                    entity.entityType,
+                    entity.entityId,
+                    entity.liteLlmResourceType,
+                    entity.liteLlmResourceId,
+                    entity.lastSyncStatus,
+                    entity.lastSyncError,
+                    entity.lastSyncedAt,
+                    entity.updatedAt
+            );
+        }
+    }
+
+    public record LiteLlmHealthResponse(boolean healthy, String mode, String error) {
+    }
+
+    public record LiteLlmReconciliationResponse(int attempted,
+                                                int failed,
+                                                Instant completedAt,
+                                                boolean syncEnabled,
+                                                boolean dryRun) {
+    }
+
     private AuditEventResponse toAuditEventResponse(AuditLogEntity entity) {
         Map<String, Object> payload = parsePayload(entity.payloadJson);
         return new AuditEventResponse(
@@ -637,6 +785,14 @@ public class ManagementResource {
         }
         String normalized = value.trim();
         return normalized.isEmpty() ? null : normalized;
+    }
+
+    private String normalizedActor(String actorId) {
+        return Optional.ofNullable(actorId).filter(value -> !value.isBlank()).orElse("management-user");
+    }
+
+    private String normalizedRequestId(String requestId) {
+        return Optional.ofNullable(requestId).filter(value -> !value.isBlank()).orElse("mgmt_" + UUID.randomUUID());
     }
 
     private Instant parseInstant(String value, String label) {

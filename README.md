@@ -81,6 +81,7 @@ Services:
 - ext_proc service (usage extraction for egress responses): `localhost:18080`
 - PostgreSQL: `localhost:5432`
 - Mock backend: `http://localhost:8000`
+- LiteLLM proxy (internal by default): `http://localhost:4000`
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3000`
 
@@ -160,6 +161,13 @@ java scripts/MeasureExtProcOverhead.java \
   - it reaches 1000 tokens, or
   - 10 minutes elapsed since window start.
 - Token overflow is automatically moved into newly created windows.
+
+## LiteLLM integration
+
+GrayFile can run in `direct` mode or forward inference to an internal LiteLLM
+proxy with `GRAYFILE_BACKEND_MODE=litellm`. GrayFile remains the source of truth
+for clients, pricing, audit, usage capture, and billing; LiteLLM is used as the
+provider execution plane. See `docs/litellm-integration.md`.
 
 ## Notes
 

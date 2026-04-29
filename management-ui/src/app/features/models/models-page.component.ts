@@ -61,6 +61,11 @@ export class ModelsPageComponent {
   protected readonly routeForm = this.fb.nonNullable.group({
     backendId: ['', Validators.required],
     baseUrl: ['', Validators.required],
+    provider: [''],
+    liteLlmModel: [''],
+    apiBase: [''],
+    apiVersion: [''],
+    secretRef: [''],
     weight: [100, [Validators.required, Validators.min(1)]],
     active: [false]
   });
@@ -188,6 +193,11 @@ export class ModelsPageComponent {
     this.routeForm.setValue({
       backendId: route.backendId,
       baseUrl: route.baseUrl,
+      provider: route.provider ?? '',
+      liteLlmModel: route.liteLlmModel ?? '',
+      apiBase: route.apiBase ?? route.baseUrl,
+      apiVersion: route.apiVersion ?? '',
+      secretRef: route.secretRef ?? '',
       weight: route.weight,
       active: route.active
     });
@@ -196,7 +206,17 @@ export class ModelsPageComponent {
 
   protected resetRouteForm(): void {
     this.selectedRouteId.set(null);
-    this.routeForm.reset({ backendId: '', baseUrl: '', weight: 100, active: false });
+    this.routeForm.reset({
+      backendId: '',
+      baseUrl: '',
+      provider: '',
+      liteLlmModel: '',
+      apiBase: '',
+      apiVersion: '',
+      secretRef: '',
+      weight: 100,
+      active: false
+    });
     this.routeForm.controls.backendId.enable();
   }
 
@@ -272,6 +292,11 @@ export class ModelsPageComponent {
         {
           backendId: raw.backendId,
           baseUrl: raw.baseUrl,
+          provider: raw.provider,
+          liteLlmModel: raw.liteLlmModel,
+          apiBase: raw.apiBase,
+          apiVersion: raw.apiVersion,
+          secretRef: raw.secretRef,
           weight: raw.weight,
           active: raw.active,
           changeType: 'routing'
@@ -315,6 +340,27 @@ export class ModelsPageComponent {
       .subscribe(() => {
         this.refreshRoutes(route.modelId);
         this.resetRouteForm();
+      });
+  }
+
+  protected syncRouteDeployment(route: ModelRoute): void {
+    this.api
+      .updateRouteDeployment(
+        route.modelId,
+        route.backendId,
+        {
+          provider: route.provider ?? '',
+          liteLlmModel: route.liteLlmModel ?? route.modelId,
+          apiBase: route.apiBase ?? route.baseUrl,
+          apiVersion: route.apiVersion ?? '',
+          secretRef: route.secretRef ?? '',
+          changeType: 'routing'
+        },
+        this.auditForm.getRawValue()
+      )
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.refreshRoutes(route.modelId);
       });
   }
 

@@ -1,0 +1,70 @@
+<section class="page-shell">
+  <article class="hero-card hero">
+    <div class="eyebrow">LiteLLM sync</div>
+    <h2 class="page-title">Surveiller le provisionnement technique.</h2>
+    <p class="page-subtitle">
+      GrayFile reste la source de verite metier et pousse les ressources operationnelles vers LiteLLM.
+    </p>
+  </article>
+
+  <section class="stack">
+    <mat-card class="content-card">
+      <mat-card-content class="stack">
+        <div class="toolbar-actions">
+          <button mat-flat-button (click)="reconcile()">
+            <mat-icon fontSet="material-icons-outlined">sync</mat-icon>
+            Reconcile
+          </button>
+          <button mat-stroked-button (click)="refresh()">Rafraichir</button>
+        </div>
+
+        <div class="status-grid">
+          <div class="metric-tile">
+            <div class="eyebrow">Health</div>
+            <strong>{{ health()?.healthy ? 'OK' : 'Erreur' }}</strong>
+            <span>{{ health()?.error || health()?.mode || 'n/a' }}</span>
+          </div>
+          <div class="metric-tile">
+            <div class="eyebrow">Ressources</div>
+            <strong>{{ resources().length }}</strong>
+            <span>mappings suivis</span>
+          </div>
+          <div class="metric-tile">
+            <div class="eyebrow">Derniere reconcile</div>
+            <strong>{{ reconciliation()?.failed ?? 0 }} erreur(s)</strong>
+            <span>{{ reconciliation()?.attempted ?? 0 }} tentative(s)</span>
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <mat-card class="content-card">
+      <mat-card-content class="stack">
+        <div>
+          <div class="eyebrow">Mappings</div>
+          <h3>Ressources GrayFile -> LiteLLM</h3>
+        </div>
+
+        <div class="entity-list">
+          @for (resource of resources(); track resource.id) {
+            <div class="entity-item sync-row">
+              <div>
+                <div class="eyebrow">{{ resource.entityType }} / {{ resource.liteLlmResourceType }}</div>
+                <strong>{{ resource.entityId }}</strong>
+                <span>{{ resource.liteLlmResourceId || 'resource non provisionnee' }}</span>
+                @if (resource.lastSyncError) {
+                  <span>{{ resource.lastSyncError }}</span>
+                }
+              </div>
+              <span class="status-pill" [class.is-inactive]="resource.lastSyncStatus !== 'synced'">
+                {{ resource.lastSyncStatus }}
+              </span>
+            </div>
+          } @empty {
+            <div class="empty-state">Aucune ressource LiteLLM suivie.</div>
+          }
+        </div>
+      </mat-card-content>
+    </mat-card>
+  </section>
+</section>

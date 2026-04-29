@@ -7,7 +7,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
-import { ApiKey, Customer } from '../../core/models/management.models';
+import { ApiKey, Customer, LiteLlmResource } from '../../core/models/management.models';
 import { ManagementApiService } from '../../core/services/management-api.service';
 
 @Component({
@@ -33,6 +33,7 @@ export class ApiKeysPageComponent {
 
   protected readonly apiKeys = signal<ApiKey[]>([]);
   protected readonly customers = signal<Customer[]>([]);
+  protected readonly liteLlmResources = signal<LiteLlmResource[]>([]);
   protected readonly selectedId = signal<string | null>(null);
   protected readonly selectedApiKey = computed(
     () => this.apiKeys().find((apiKey) => apiKey.id === this.selectedId()) ?? null
@@ -107,6 +108,7 @@ export class ApiKeysPageComponent {
 
     request$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.loadApiKeys();
+      this.loadLiteLlmResources();
       this.resetForm();
     });
   }
@@ -122,8 +124,13 @@ export class ApiKeysPageComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         this.loadApiKeys();
+        this.loadLiteLlmResources();
         this.resetForm();
       });
+  }
+
+  protected syncStatus(apiKeyId: string): LiteLlmResource | null {
+    return this.liteLlmResources().find((resource) => resource.entityType === 'api_key' && resource.entityId === apiKeyId) ?? null;
   }
 
   protected customerName(customerId: string): string {
@@ -139,6 +146,7 @@ export class ApiKeysPageComponent {
       });
 
     this.loadApiKeys();
+    this.loadLiteLlmResources();
   }
 
   private loadApiKeys(): void {
@@ -147,6 +155,15 @@ export class ApiKeysPageComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((apiKeys) => {
         this.apiKeys.set(apiKeys);
+      });
+  }
+
+  private loadLiteLlmResources(): void {
+    this.api
+      .listLiteLlmResources()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((resources) => {
+        this.liteLlmResources.set(resources);
       });
   }
 }

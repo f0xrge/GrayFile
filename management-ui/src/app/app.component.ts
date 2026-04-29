@@ -24,6 +24,7 @@ export class AppComponent {
     { label: 'Overview', route: '/overview', icon: 'space_dashboard' },
     { label: 'Clients', route: '/customers', icon: 'domain' },
     { label: 'API keys', route: '/api-keys', icon: 'vpn_key' },
-    { label: 'Modeles & endpoints', route: '/models', icon: 'hub' }
+    { label: 'Modeles & endpoints', route: '/models', icon: 'hub' },
+    { label: 'LiteLLM sync', route: '/litellm-sync', icon: 'sync_alt' }
   ];
 }

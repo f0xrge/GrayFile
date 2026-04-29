@@ -18,6 +18,11 @@ public class DynamicBackendGateway implements BackendGateway {
 
     @Override
     public Response proxy(String baseUrl, OpenAiRequestContext requestContext) {
+        return proxy(baseUrl, requestContext, Map.of());
+    }
+
+    @Override
+    public Response proxy(String baseUrl, OpenAiRequestContext requestContext, Map<String, String> headers) {
         Client client = clientsByBaseUrl.computeIfAbsent(baseUrl, ignored -> ClientBuilder.newBuilder().build());
         var request = client.target(baseUrl)
                 .path(requestContext.endpoint().path())
@@ -27,6 +32,11 @@ public class DynamicBackendGateway implements BackendGateway {
         if (requestContext.traceparent() != null && !requestContext.traceparent().isBlank()) {
             request.header("traceparent", requestContext.traceparent());
         }
+        headers.forEach((key, value) -> {
+            if (value != null && !value.isBlank()) {
+                request.header(key, value);
+            }
+        });
 
         return switch (requestContext.httpMethod().toUpperCase()) {
             case "GET" -> request.get();

@@ -3,6 +3,7 @@ import { ApiKeysPageComponent } from './features/api-keys/api-keys-page.componen
 import { CustomersPageComponent } from './features/customers/customers-page.component';
 import { ModelsPageComponent } from './features/models/models-page.component';
 import { OverviewPageComponent } from './features/overview/overview-page.component';
+import { LiteLlmSyncPageComponent } from './features/litellm-sync/litellm-sync-page.component';
 
 export const appRoutes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'overview' },
@@ -10,5 +11,6 @@ export const appRoutes: Routes = [
   { path: 'customers', component: CustomersPageComponent },
   { path: 'api-keys', component: ApiKeysPageComponent },
   { path: 'models', component: ModelsPageComponent },
+  { path: 'litellm-sync', component: LiteLlmSyncPageComponent },
   { path: '**', redirectTo: 'overview' }
 ];

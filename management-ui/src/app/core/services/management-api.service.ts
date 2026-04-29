@@ -6,6 +6,9 @@ import {
   AuditHeadersInput,
   Customer,
   CustomerModelPricing,
+  LiteLlmHealth,
+  LiteLlmReconciliation,
+  LiteLlmResource,
   LlmModel,
   ModelRoute,
   UsageAnalyticsResponse
@@ -120,6 +123,12 @@ export class ManagementApiService {
     });
   }
 
+  updateRouteDeployment(modelId: string, backendId: string, payload: ModelRouteDeploymentPayload, audit?: AuditHeadersInput): Observable<ModelRoute> {
+    return this.http.put<ModelRoute>(`${this.baseUrl}/models/${modelId}/routes/${backendId}/deployment`, payload, {
+      headers: this.auditHeaders(audit)
+    });
+  }
+
   listCustomerPricing(modelId: string): Observable<CustomerModelPricing[]> {
     return this.http.get<CustomerModelPricing[]>(`${this.baseUrl}/models/${modelId}/customer-pricing`);
   }
@@ -155,6 +164,20 @@ export class ManagementApiService {
       params = params.set('limit', String(filters.limit));
     }
     return this.http.get<UsageAnalyticsResponse>(`${this.baseUrl}/usage-analytics`, { params });
+  }
+
+  listLiteLlmResources(): Observable<LiteLlmResource[]> {
+    return this.http.get<LiteLlmResource[]>(`${this.baseUrl}/litellm/resources`);
+  }
+
+  getLiteLlmHealth(): Observable<LiteLlmHealth> {
+    return this.http.get<LiteLlmHealth>(`${this.baseUrl}/litellm/health`);
+  }
+
+  reconcileLiteLlm(audit?: AuditHeadersInput): Observable<LiteLlmReconciliation> {
+    return this.http.post<LiteLlmReconciliation>(`${this.baseUrl}/litellm/reconcile`, {}, {
+      headers: this.auditHeaders(audit)
+    });
   }
 
   private auditHeaders(audit?: AuditHeadersInput): HttpHeaders {
@@ -227,8 +250,22 @@ export interface ModelUpdatePayload {
 export interface ModelRoutePayload {
   backendId: string;
   baseUrl: string;
+  provider?: string;
+  liteLlmModel?: string;
+  apiBase?: string;
+  apiVersion?: string;
+  secretRef?: string;
   weight: number;
   active: boolean;
+  changeType: string;
+}
+
+export interface ModelRouteDeploymentPayload {
+  provider?: string;
+  liteLlmModel?: string;
+  apiBase?: string;
+  apiVersion?: string;
+  secretRef?: string;
   changeType: string;
 }
 

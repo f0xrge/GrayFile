@@ -27,6 +27,19 @@ spec:
           env:
             - name: GRAYFILE_BACKEND_URL
               value: http://envoy:10000
+            - name: GRAYFILE_BACKEND_MODE
+              value: direct
+            - name: GRAYFILE_LITELLM_BASE_URL
+              value: http://litellm:4000
+            - name: GRAYFILE_LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: grayfile-litellm-secret
+                  key: LITELLM_MASTER_KEY
+            - name: GRAYFILE_LITELLM_SYNC_ENABLED
+              value: "false"
+            - name: GRAYFILE_LITELLM_SYNC_DRY_RUN
+              value: "true"
             - name: GRAYFILE_DB_URL
               valueFrom:
                 secretKeyRef:

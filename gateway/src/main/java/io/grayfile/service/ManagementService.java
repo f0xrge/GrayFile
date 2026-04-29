@@ -258,6 +258,21 @@ public class ManagementService {
                                              Integer weight,
                                              Boolean active,
                                              ChangeAuditContext context) {
+        return createModelRoute(modelId, backendId, baseUrl, null, null, null, null, null, weight, active, context);
+    }
+
+    @Transactional
+    public ModelRouteEntity createModelRoute(String modelId,
+                                             String backendId,
+                                             String baseUrl,
+                                             String provider,
+                                             String liteLlmModel,
+                                             String apiBase,
+                                             String apiVersion,
+                                             String secretRef,
+                                             Integer weight,
+                                             Boolean active,
+                                             ChangeAuditContext context) {
         modelId = normalizeIdentifier(modelId, "model id");
         getModel(modelId);
         backendId = normalizeIdentifier(backendId, "backend id");
@@ -267,7 +282,14 @@ public class ManagementService {
         ModelRouteEntity entity = new ModelRouteEntity();
         entity.modelId = modelId;
         entity.backendId = backendId;
+        entity.deploymentId = backendId;
         entity.baseUrl = normalizeBaseUrl(baseUrl);
+        entity.provider = normalizeOptional(provider);
+        entity.liteLlmModel = normalizeOptional(liteLlmModel) == null ? modelId : normalizeOptional(liteLlmModel);
+        entity.apiBase = normalizeOptional(apiBase) == null ? entity.baseUrl : normalizeBaseUrl(apiBase);
+        entity.apiVersion = normalizeOptional(apiVersion);
+        entity.secretRef = normalizeOptional(secretRef);
+        entity.lastSyncStatus = "pending";
         entity.weight = normalizeWeight(weight);
         entity.active = active == null || active;
         // A route can be defined ahead of time while the backend is still offline.
@@ -323,6 +345,35 @@ public class ManagementService {
         entity.updatedAt = Instant.now();
         Map<String, Object> newState = modelRouteState(entity);
         auditManagementChange("MODEL_ROUTE_UPDATED", "model_route", entity.modelId + ":" + entity.backendId, context, oldState, newState);
+        modelRoutesChangedEvent.fire(new ModelRoutesChangedEvent(entity.modelId));
+        return entity;
+    }
+
+    @Transactional
+    public ModelRouteEntity updateModelRouteDeployment(String modelId,
+                                                       String backendId,
+                                                       String provider,
+                                                       String liteLlmModel,
+                                                       String apiBase,
+                                                       String apiVersion,
+                                                       String secretRef,
+                                                       ChangeAuditContext context) {
+        ModelRouteEntity entity = modelRouteRepository.findByModelAndBackend(normalizeIdentifier(modelId, "model id"), normalizeIdentifier(backendId, "backend id"))
+                .orElseThrow(() -> new NotFoundException("route not found for model=" + modelId + " backend=" + backendId));
+        Map<String, Object> oldState = modelRouteState(entity);
+        entity.provider = normalizeOptional(provider);
+        String normalizedLiteLlmModel = normalizeOptional(liteLlmModel);
+        entity.liteLlmModel = normalizedLiteLlmModel == null ? entity.modelId : normalizedLiteLlmModel;
+        String normalizedApiBase = normalizeOptional(apiBase);
+        entity.apiBase = normalizedApiBase == null ? entity.baseUrl : normalizeBaseUrl(normalizedApiBase);
+        entity.apiVersion = normalizeOptional(apiVersion);
+        entity.secretRef = normalizeOptional(secretRef);
+        entity.lastSyncStatus = "pending";
+        entity.lastSyncError = null;
+        entity.version += 1;
+        entity.updatedAt = Instant.now();
+        Map<String, Object> newState = modelRouteState(entity);
+        auditManagementChange("MODEL_ROUTE_DEPLOYMENT_UPDATED", "model_route", entity.modelId + ":" + entity.backendId, context, oldState, newState);
         modelRoutesChangedEvent.fire(new ModelRoutesChangedEvent(entity.modelId));
         return entity;
     }
@@ -620,6 +671,15 @@ public class ManagementService {
                 "model_id", entity.modelId,
                 "backend_id", entity.backendId,
                 "base_url", entity.baseUrl,
+                "deployment_id", entity.deploymentId,
+                "provider", entity.provider,
+                "litellm_model", entity.liteLlmModel,
+                "api_base", entity.apiBase,
+                "api_version", entity.apiVersion,
+                "secret_ref", entity.secretRef,
+                "last_sync_status", entity.lastSyncStatus,
+                "last_sync_error", entity.lastSyncError,
+                "last_synced_at", entity.lastSyncedAt,
                 "weight", entity.weight,
                 "active", entity.active,
                 "version", entity.version,

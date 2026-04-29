@@ -6,6 +6,7 @@ namespace: grayfile
 resources:
   - namespace.yaml
   - gateway.yaml
+  - litellm.yaml
   - ext-proc.yaml
   - envoy.yaml
   - management-ui.yaml
@@ -19,6 +20,8 @@ images:
     newTag: 0.1.0
   - name: registry.example.com/grayfile/management-ui
     newTag: 0.1.0
+  - name: docker.litellm.ai/berriai/litellm
+    newTag: main-latest
 
 configMapGenerator:
   - name: envoy-config
@@ -27,6 +30,9 @@ configMapGenerator:
   - name: prometheus-config
     files:
       - prometheus.yml=config/prometheus/prometheus.yml
+  - name: litellm-config
+    files:
+      - config.yaml=../../../litellm/config.yaml
   - name: grafana-datasources
     files:
       - datasource.yml=config/grafana/provisioning/datasources/datasource.yml

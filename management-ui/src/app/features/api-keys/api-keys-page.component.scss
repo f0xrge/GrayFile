@@ -3,3 +3,11 @@
 .content-card mat-card-content {
   padding: 28px;
 }
+
+.sync-panel {
+  border: 1px solid var(--gf-border);
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+}

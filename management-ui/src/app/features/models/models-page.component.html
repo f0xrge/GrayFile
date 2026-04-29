@@ -185,8 +185,8 @@
       <mat-card class="content-card">
         <mat-card-content class="stack">
           <div>
-            <div class="eyebrow">Endpoints associes</div>
-            <h3>Routes backend</h3>
+            <div class="eyebrow">Deployments LiteLLM</div>
+            <h3>Routes provider pilotees par GrayFile</h3>
           </div>
 
           @if (selectedModel()) {
@@ -205,6 +205,31 @@
                 <mat-form-field class="full">
                   <mat-label>Base URL</mat-label>
                   <input matInput formControlName="baseUrl">
+                </mat-form-field>
+
+                <mat-form-field>
+                  <mat-label>Provider</mat-label>
+                  <input matInput formControlName="provider">
+                </mat-form-field>
+
+                <mat-form-field>
+                  <mat-label>LiteLLM model</mat-label>
+                  <input matInput formControlName="liteLlmModel">
+                </mat-form-field>
+
+                <mat-form-field class="full">
+                  <mat-label>Provider API base</mat-label>
+                  <input matInput formControlName="apiBase">
+                </mat-form-field>
+
+                <mat-form-field>
+                  <mat-label>API version</mat-label>
+                  <input matInput formControlName="apiVersion">
+                </mat-form-field>
+
+                <mat-form-field>
+                  <mat-label>Secret env ref</mat-label>
+                  <input matInput formControlName="secretRef">
                 </mat-form-field>
 
                 <div class="full">
@@ -227,6 +252,13 @@
                   <button type="button" class="route-main" (click)="selectRoute(route)">
                     <div class="eyebrow">{{ route.backendId }}</div>
                     <strong>{{ route.baseUrl }}</strong>
+                    <span>LiteLLM: {{ route.liteLlmModel || route.modelId }} / {{ route.provider || 'provider n/a' }}</span>
+                    <span class="status-pill" [class.is-inactive]="route.lastSyncStatus !== 'synced'">
+                      Sync {{ route.lastSyncStatus || 'pending' }}
+                    </span>
+                    @if (route.lastSyncError) {
+                      <span>{{ route.lastSyncError }}</span>
+                    }
                   </button>
                   <div class="route-meta">
                     <span class="status-pill" [class.is-inactive]="!route.active">
@@ -241,6 +273,7 @@
                     <button mat-stroked-button (click)="toggleRoute(route)">
                       {{ route.active ? 'Desactiver' : 'Activer' }}
                     </button>
+                    <button mat-stroked-button (click)="syncRouteDeployment(route)">Retry sync</button>
                     <button mat-stroked-button (click)="updateRouteWeight(route, weightInput.value)">Mettre le poids</button>
                     <button mat-stroked-button color="warn" (click)="deleteRoute(route)">Supprimer</button>
                   </div>
